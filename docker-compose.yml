@@ -1,0 +1,73 @@
+version: "3.8"
+
+services:
+  langfuse-server:
+    image: ghcr.io/langfuse/langfuse:latest
+    container_name: langops-langfuse
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/langfuse
+      - NEXTAUTH_SECRET=local-dev-secret-change-in-production
+      - SALT=local-dev-salt-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - langops-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: langops-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=langfuse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - langops-network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: langops-chromadb
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - langops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: langops-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - langops-network
+
+volumes:
+  postgres_data:
+  chroma_data:
+  redis_data:
+
+networks:
+  langops-network:
+    driver: bridge
