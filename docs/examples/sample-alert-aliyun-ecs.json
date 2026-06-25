@@ -1,0 +1,20 @@
+{
+  "title": "ECS CPU使用率过高",
+  "description": "ECS 实例 CPU 使用率超过 90%，持续 10 分钟",
+  "severity": "critical",
+  "category": "resource",
+  "source": {
+    "type": "aliyun",
+    "system": "cn-hangzhou",
+    "instance_id": "i-bp1example0001",
+    "resource_type": "ecs",
+    "service": "order-service"
+  },
+  "metric_data": {
+    "cpu_usage_percent": 93.2
+  },
+  "context": {
+    "region": "cn-hangzhou",
+    "instance_spec": "ecs.c6.large"
+  }
+}

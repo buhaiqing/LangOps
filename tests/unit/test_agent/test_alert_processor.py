@@ -78,6 +78,50 @@ def processor() -> AlertProcessor:
 
 
 @pytest.mark.asyncio
+async def test_process_collects_aliyun_metrics_for_aliyun_source() -> None:
+    langfuse = MagicMock()
+    langfuse.get_current_trace_id.return_value = "trace-aliyun"
+
+    rca_engine = MagicMock()
+    rca_engine.analyze = AsyncMock(
+        return_value=RootCause(category="资源不足", description="ECS 规格过小", confidence=0.85)
+    )
+    rca_engine.generate_remediation = AsyncMock(
+        return_value=RemediationSuggestion(summary="升配", steps=["step1"])
+    )
+
+    vector_store = MagicMock()
+    vector_store.search = AsyncMock(return_value=[])
+
+    aliyun = MagicMock()
+    aliyun.collect = AsyncMock(return_value={"CPUUtilization": {"status": "success"}})
+
+    processor = AlertProcessor(
+        langfuse=langfuse,
+        rca_engine=rca_engine,
+        vector_store=vector_store,
+        aliyun_collector=aliyun,
+    )
+
+    alert = Alert(
+        id="alert-ecs",
+        title="ECS CPU过高",
+        description="CPU > 90%",
+        severity=AlertSeverity.CRITICAL,
+        category=AlertCategory.RESOURCE,
+        source=AlertSource(
+            type="aliyun",
+            system="cn-hangzhou",
+            instance_id="i-abc123",
+            resource_type="ecs",
+        ),
+    )
+
+    await processor.process(alert)
+    aliyun.collect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_process_returns_analysis_result(processor: AlertProcessor) -> None:
     result = await processor.process(_alert())
 

@@ -40,6 +40,17 @@ class PrometheusSettings(BaseSettings):
     scrape_interval: int = Field(default=15)
 
 
+class AliyunSettings(BaseSettings):
+    """Alibaba Cloud configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="ALIYUN_")
+
+    access_key_id: str = Field(default="", description="Access key ID")
+    access_key_secret: str = Field(default="", description="Access key secret")
+    region: str = Field(default="cn-hangzhou", description="Default region")
+    cms_endpoint: str = Field(default="metrics.aliyuncs.com", description="CMS API endpoint")
+
+
 class VectorStoreSettings(BaseSettings):
     """Vector store configuration."""
 
@@ -84,6 +95,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)  # type: ignore[arg-type]
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)  # type: ignore[arg-type]
     prometheus: PrometheusSettings = Field(default_factory=PrometheusSettings)
+    aliyun: AliyunSettings = Field(default_factory=AliyunSettings)
     vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
 

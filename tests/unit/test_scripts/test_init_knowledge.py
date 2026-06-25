@@ -29,6 +29,14 @@ def test_sample_alert_json_matches_alert_create() -> None:
     assert alert.severity.value == "critical"
 
 
+def test_sample_alert_aliyun_ecs_json_matches_alert_create() -> None:
+    path = ROOT / "docs" / "examples" / "sample-alert-aliyun-ecs.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    alert = AlertCreate.model_validate(data)
+    assert alert.source.type == "aliyun"
+    assert alert.source.instance_id == "i-bp1example0001"
+
+
 @pytest.mark.asyncio
 async def test_init_knowledge_base_adds_all_sample_cases() -> None:
     mod = _load_init_module()

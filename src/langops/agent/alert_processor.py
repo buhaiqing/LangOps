@@ -6,7 +6,7 @@ from datetime import timedelta
 from langfuse import Langfuse, observe, propagate_attributes
 
 from langops.agent.rca_engine import RCAEngine
-from langops.collectors import PrometheusCollector
+from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import get_logger
 from langops.core.exceptions import AnalysisError
 from langops.knowledge import VectorStore
@@ -31,11 +31,13 @@ class AlertProcessor:
         rca_engine: RCAEngine,
         vector_store: VectorStore,
         prometheus_collector: PrometheusCollector | None = None,
+        aliyun_collector: AliyunCmsCollector | None = None,
     ) -> None:
         self.langfuse = langfuse
         self.rca_engine = rca_engine
         self.vector_store = vector_store
         self.prometheus_collector = prometheus_collector
+        self.aliyun_collector = aliyun_collector
         logger.info("AlertProcessor initialized")
 
     @observe(as_type="agent")
@@ -115,6 +117,26 @@ class AlertProcessor:
             except Exception as exc:
                 logger.warning(
                     "Failed to collect Prometheus metrics",
+                    alert_id=alert.id,
+                    error=str(exc),
+                )
+                context.metrics = {"error": str(exc)}
+
+        if self.aliyun_collector and alert.source.type == "aliyun":
+            try:
+                metrics = await self.aliyun_collector.collect(
+                    alert,
+                    time_window=timedelta(minutes=30),
+                )
+                context.metrics = metrics
+                logger.info(
+                    "Collected Aliyun CMS metrics",
+                    alert_id=alert.id,
+                    metrics_count=len(metrics),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to collect Aliyun CMS metrics",
                     alert_id=alert.id,
                     error=str(exc),
                 )

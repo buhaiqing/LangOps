@@ -18,6 +18,10 @@ numpy>=1.26.0
 aiohttp>=3.9.0
 httpx>=0.26.0
 
+# Alibaba Cloud CMS
+alibabacloud_cms20190101>=2.0.8
+alibabacloud_tea_openapi>=0.3.12
+
 # Utilities
 structlog>=24.1.0
 tenacity>=8.2.0

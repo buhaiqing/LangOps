@@ -5,7 +5,7 @@ from functools import lru_cache
 from langfuse import Langfuse
 
 from langops.agent import AlertProcessor, RCAEngine
-from langops.collectors import PrometheusCollector
+from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import settings
 from langops.knowledge import VectorStore
 
@@ -45,6 +45,21 @@ def get_prometheus_collector() -> PrometheusCollector | None:
     )
 
 
+def get_aliyun_collector() -> AliyunCmsCollector | None:
+    """Get Aliyun CMS collector if credentials are configured."""
+    if not settings.aliyun.access_key_id or not settings.aliyun.access_key_secret:
+        return None
+
+    return AliyunCmsCollector(
+        {
+            "access_key_id": settings.aliyun.access_key_id,
+            "access_key_secret": settings.aliyun.access_key_secret,
+            "region": settings.aliyun.region,
+            "endpoint": settings.aliyun.cms_endpoint,
+        }
+    )
+
+
 @lru_cache
 def get_rca_engine() -> RCAEngine:
     """Get RCA engine (cached)."""
@@ -62,4 +77,5 @@ def get_alert_processor() -> AlertProcessor:
         rca_engine=get_rca_engine(),
         vector_store=get_vector_store(),
         prometheus_collector=get_prometheus_collector(),
+        aliyun_collector=get_aliyun_collector(),
     )
