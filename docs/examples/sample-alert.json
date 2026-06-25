@@ -1,0 +1,24 @@
+{
+  "title": "CPU使用率过高",
+  "description": "order-service Pod CPU使用率超过90%，持续5分钟",
+  "severity": "critical",
+  "category": "resource",
+  "source": {
+    "type": "kubernetes",
+    "system": "prod-cluster",
+    "namespace": "production",
+    "pod_name": "order-service-abc123"
+  },
+  "metric_data": {
+    "cpu_usage_percent": 95.5,
+    "memory_usage_percent": 78.2
+  },
+  "log_snippets": [
+    "2024-01-15 10:30:45 ERROR High CPU usage detected",
+    "2024-01-15 10:31:00 WARN Thread pool exhaustion"
+  ],
+  "context": {
+    "deployment_version": "v2.3.1",
+    "node_name": "node-01"
+  }
+}
