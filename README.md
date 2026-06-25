@@ -179,7 +179,7 @@ pytest tests/ -q
 | GET | `/api/v1/remediation` | 待审批修复计划列表 |
 | POST | `/api/v1/remediation/{plan_id}/execute` | 审批并执行（或 dry-run） |
 | POST | `/api/v1/remediation/{plan_id}/reject` | 拒绝修复计划 |
-| GET | `/ui` | Web 管理界面 |
+| GET | `/ui` | Web 管理界面（告警 / NL2PromQL / 容量预测 / 修复审批） |
 | GET | `/docs` | Swagger API 文档 |
 
 ### 发送测试告警
