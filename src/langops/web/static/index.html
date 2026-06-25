@@ -26,6 +26,7 @@
       <button class="tab active" data-tab="alerts" type="button">告警分析</button>
       <button class="tab" data-tab="query" type="button">自然语言查询</button>
       <button class="tab" data-tab="predict" type="button">容量预测</button>
+      <button class="tab" data-tab="remediation" type="button">修复审批</button>
     </nav>
 
     <main>
@@ -119,6 +120,27 @@
           <div class="card result-card">
             <h2>预测结果</h2>
             <pre id="predict-result" class="result">等待预测…</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-remediation" class="panel">
+        <div class="panel-grid">
+          <div class="card">
+            <h2>待审批计划</h2>
+            <p class="hint">告警分析产生的修复建议会在此等待人工审批。默认 Dry-run，不执行真实命令。</p>
+            <label>审批人<input id="remediation-user" value="ops-user" required /></label>
+            <button id="remediation-refresh" type="button" class="btn primary">刷新列表</button>
+            <ul id="remediation-list" class="plan-list" aria-label="待审批修复计划"></ul>
+          </div>
+
+          <div class="card result-card">
+            <h2>计划详情</h2>
+            <div id="remediation-actions" class="action-row" hidden>
+              <button id="remediation-dry-run" type="button" class="btn secondary">Dry-run</button>
+              <button id="remediation-reject" type="button" class="btn danger">拒绝</button>
+            </div>
+            <pre id="remediation-result" class="result">点击「刷新列表」加载待审批计划…</pre>
           </div>
         </div>
       </section>

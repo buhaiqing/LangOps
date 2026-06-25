@@ -226,6 +226,88 @@ textarea {
   cursor: not-allowed;
 }
 
+.btn.secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn.secondary:hover {
+  border-color: var(--accent-dim);
+}
+
+.btn.danger {
+  background: #7f1d1d44;
+  color: var(--danger);
+  border: 1px solid #7f1d1d;
+}
+
+.btn.danger:hover {
+  background: #7f1d1d88;
+}
+
+.action-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.plan-item {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.plan-item:hover {
+  border-color: var(--muted);
+  background: var(--surface-2);
+}
+
+.plan-item.active {
+  border-color: var(--accent-dim);
+  background: var(--surface-2);
+}
+
+.plan-item-title {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.plan-item-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.risk-low {
+  color: var(--ok);
+}
+
+.risk-medium {
+  color: #fbbf24;
+}
+
+.risk-high {
+  color: var(--danger);
+}
+
+.plan-empty {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 1rem;
+}
+
 .result-card {
   min-height: 320px;
 }

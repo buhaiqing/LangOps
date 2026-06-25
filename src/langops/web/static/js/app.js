@@ -40,12 +40,15 @@ function initTabs() {
   const panels = document.querySelectorAll(".panel");
 
   tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const name = tab.dataset.tab;
-      tabs.forEach((t) => t.classList.toggle("active", t === tab));
-      panels.forEach((p) => p.classList.toggle("active", p.id === `panel-${name}`));
-    });
+    tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
+}
+
+function switchTab(name) {
+  const tabs = document.querySelectorAll(".tab");
+  const panels = document.querySelectorAll(".panel");
+  tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  panels.forEach((p) => p.classList.toggle("active", p.id === `panel-${name}`));
 }
 
 function buildAlertPayload(form) {
@@ -92,7 +95,11 @@ function initAlertForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setResult(result, body, !body.success);
+      let text = formatJson(body);
+      if (body.remediation_plan_id) {
+        text += `\n\n→ 修复计划: ${body.remediation_plan_id}（可在「修复审批」页签处理）`;
+      }
+      setResult(result, text, !body.success);
     } catch (err) {
       setResult(result, err.message, true);
     } finally {
@@ -160,10 +167,142 @@ function initPredictForm() {
   });
 }
 
+let selectedPlanId = null;
+
+function riskClass(level) {
+  if (level === "low") return "risk-low";
+  if (level === "medium") return "risk-medium";
+  return "risk-high";
+}
+
+function renderPlanList(plans) {
+  const list = $("#remediation-list");
+  list.innerHTML = "";
+
+  if (!plans.length) {
+    list.innerHTML = '<li class="plan-empty">暂无待审批计划</li>';
+    return;
+  }
+
+  plans.forEach((plan) => {
+    const item = document.createElement("li");
+    item.className = "plan-item" + (plan.plan_id === selectedPlanId ? " active" : "");
+    item.dataset.planId = plan.plan_id;
+    item.innerHTML = `
+      <div class="plan-item-title">${plan.summary}</div>
+      <div class="plan-item-meta">
+        <span>${plan.plan_id}</span> ·
+        <span class="${riskClass(plan.risk_level)}">${plan.risk_level}</span> ·
+        ${plan.commands.length} 条命令
+      </div>`;
+    item.addEventListener("click", () => selectPlan(plan.plan_id));
+    list.appendChild(item);
+  });
+}
+
+async function selectPlan(planId) {
+  selectedPlanId = planId;
+  const result = $("#remediation-result");
+  const actions = $("#remediation-actions");
+  setResult(result, "加载中…");
+  actions.hidden = true;
+
+  try {
+    const plan = await fetchJson(`/api/v1/remediation/${planId}`);
+    setResult(result, plan);
+    actions.hidden = plan.status !== "pending_approval";
+    const refreshBtn = $("#remediation-refresh");
+    if (refreshBtn.dataset.loaded === "1") {
+      const plans = await fetchJson("/api/v1/remediation");
+      renderPlanList(plans);
+    }
+  } catch (err) {
+    setResult(result, err.message, true);
+  }
+}
+
+function initRemediationPanel() {
+  const refreshBtn = $("#remediation-refresh");
+  const result = $("#remediation-result");
+  const dryRunBtn = $("#remediation-dry-run");
+  const rejectBtn = $("#remediation-reject");
+
+  refreshBtn.addEventListener("click", async () => {
+    refreshBtn.disabled = true;
+    setResult(result, "加载中…");
+    $("#remediation-actions").hidden = true;
+
+    try {
+      const plans = await fetchJson("/api/v1/remediation");
+      refreshBtn.dataset.loaded = "1";
+      renderPlanList(plans);
+      if (plans.length) {
+        await selectPlan(plans[0].plan_id);
+      } else {
+        selectedPlanId = null;
+        setResult(result, "暂无待审批计划");
+      }
+    } catch (err) {
+      setResult(result, err.message, true);
+    } finally {
+      refreshBtn.disabled = false;
+    }
+  });
+
+  dryRunBtn.addEventListener("click", async () => {
+    if (!selectedPlanId) return;
+    const approvedBy = $("#remediation-user").value.trim();
+    if (!approvedBy) {
+      setResult(result, "请填写审批人", true);
+      return;
+    }
+    dryRunBtn.disabled = true;
+    try {
+      const body = await fetchJson(`/api/v1/remediation/${selectedPlanId}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved_by: approvedBy, confirm: true, dry_run: true }),
+      });
+      setResult(result, body, !body.success);
+      $("#remediation-actions").hidden = true;
+      refreshBtn.click();
+    } catch (err) {
+      setResult(result, err.message, true);
+    } finally {
+      dryRunBtn.disabled = false;
+    }
+  });
+
+  rejectBtn.addEventListener("click", async () => {
+    if (!selectedPlanId) return;
+    const rejectedBy = $("#remediation-user").value.trim();
+    if (!rejectedBy) {
+      setResult(result, "请填写审批人", true);
+      return;
+    }
+    rejectBtn.disabled = true;
+    try {
+      const body = await fetchJson(`/api/v1/remediation/${selectedPlanId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rejected_by: rejectedBy, reason: "Web UI reject" }),
+      });
+      setResult(result, body, !body.success);
+      $("#remediation-actions").hidden = true;
+      refreshBtn.click();
+    } catch (err) {
+      setResult(result, err.message, true);
+    } finally {
+      rejectBtn.disabled = false;
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initAlertForm();
   initQueryForm();
   initPredictForm();
+  initRemediationPanel();
   refreshHealth();
 });
