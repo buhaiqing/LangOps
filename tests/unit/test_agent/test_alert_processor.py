@@ -122,6 +122,36 @@ async def test_process_collects_aliyun_metrics_for_aliyun_source() -> None:
 
 
 @pytest.mark.asyncio
+async def test_process_sends_notification_when_configured() -> None:
+    langfuse = MagicMock()
+    langfuse.get_current_trace_id.return_value = "trace-notify"
+
+    rca_engine = MagicMock()
+    rca_engine.analyze = AsyncMock(
+        return_value=RootCause(category="资源不足", description="CPU 过高", confidence=0.9)
+    )
+    rca_engine.generate_remediation = AsyncMock(
+        return_value=RemediationSuggestion(summary="升配", steps=["step1"])
+    )
+
+    vector_store = MagicMock()
+    vector_store.search = AsyncMock(return_value=[])
+
+    notification = MagicMock()
+    notification.notify_analysis = AsyncMock(return_value={"feishu": True})
+
+    processor = AlertProcessor(
+        langfuse=langfuse,
+        rca_engine=rca_engine,
+        vector_store=vector_store,
+        notification_service=notification,
+    )
+
+    await processor.process(_alert())
+    notification.notify_analysis.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_process_returns_analysis_result(processor: AlertProcessor) -> None:
     result = await processor.process(_alert())
 

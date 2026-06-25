@@ -18,6 +18,7 @@ from langops.models import (
     RootCause,
     SimilarCase,
 )
+from langops.services import NotificationService
 
 logger = get_logger(__name__)
 
@@ -32,12 +33,14 @@ class AlertProcessor:
         vector_store: VectorStore,
         prometheus_collector: PrometheusCollector | None = None,
         aliyun_collector: AliyunCmsCollector | None = None,
+        notification_service: NotificationService | None = None,
     ) -> None:
         self.langfuse = langfuse
         self.rca_engine = rca_engine
         self.vector_store = vector_store
         self.prometheus_collector = prometheus_collector
         self.aliyun_collector = aliyun_collector
+        self.notification_service = notification_service
         logger.info("AlertProcessor initialized")
 
     @observe(as_type="agent")
@@ -89,6 +92,17 @@ class AlertProcessor:
                     processing_time=processing_time,
                     confidence=root_cause.confidence,
                 )
+
+                if self.notification_service:
+                    try:
+                        await self.notification_service.notify_analysis(alert, result)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to send notification",
+                            alert_id=alert.id,
+                            error=str(exc),
+                        )
+
                 return result
 
             except AnalysisError:

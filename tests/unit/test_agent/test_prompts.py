@@ -121,3 +121,17 @@ def test_build_nl_query_prompt_limits_metrics() -> None:
     assert "metric_19" in prompt
     assert "metric_20" not in prompt
     assert '"promql"' in prompt
+
+
+def test_build_nl_result_prompt_includes_query_and_data() -> None:
+    from langops.agent.prompts import build_nl_result_prompt
+
+    prompt = build_nl_result_prompt(
+        "CPU 高的服务",
+        "sum(rate(container_cpu_usage_seconds_total[5m]))",
+        [{"metric": {"pod": "order"}, "value": "0.9"}],
+    )
+
+    assert "CPU 高的服务" in prompt
+    assert "container_cpu_usage_seconds_total" in prompt
+    assert '"answer"' in prompt

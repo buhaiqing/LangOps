@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from langops.core import configure_logging, get_logger
-from langops.web.api import alerts
+from langops.web.api import alerts, query
 
 logger = get_logger(__name__)
 
@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(alerts.router, prefix="/api/v1")
+    app.include_router(query.router, prefix="/api/v1")
 
     @app.get("/health")
     async def health() -> dict[str, str]:

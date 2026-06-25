@@ -110,3 +110,39 @@ async def test_close_closes_open_session() -> None:
     await collector.close()
 
     mock_session.close.assert_awaited_once()
+
+
+def test_parse_instant_result_extracts_value() -> None:
+    collector = PrometheusCollector({"url": "http://prometheus:9090"})
+    parsed = collector._parse_instant_result(
+        [{"metric": {"pod": "app"}, "value": [1700000000.0, "0.75"]}]
+    )
+    assert parsed[0]["value"] == "0.75"
+    assert parsed[0]["metric"]["pod"] == "app"
+
+
+@pytest.mark.asyncio
+async def test_query_instant_calls_prometheus_api() -> None:
+    collector = PrometheusCollector({"url": "http://prometheus:9090"})
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(
+        return_value={
+            "status": "success",
+            "data": {
+                "result": [{"metric": {"job": "api"}, "value": [1.0, "1"]}],
+            },
+        }
+    )
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    collector._get_session = AsyncMock(return_value=mock_session)
+
+    result = await collector.query_instant("up")
+
+    assert len(result) == 1
+    mock_session.get.assert_called_once()
+    assert mock_session.get.call_args[0][0] == "http://prometheus:9090/api/v1/query"
