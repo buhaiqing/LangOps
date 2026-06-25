@@ -11,7 +11,7 @@
 
 LangOps 是一个开源的 AI 智能化运维平台，专注于：
 
-- ☁️ **云资源巡检**：阿里云 ECS、RDS、SLB 等资源监控与分析（规划中）
+- ☁️ **云资源巡检**：阿里云 ECS、RDS 等指标采集（CMS）
 - 🚢 **Kubernetes 巡检**：K8s 集群健康度、Pod 状态、性能分析
 - 🧠 **智能根因分析**：利用 LLM 自动分析告警根因
 - 📚 **知识沉淀**：故障案例归档与向量检索（RAG）
@@ -122,6 +122,12 @@ PROMETHEUS_URL=http://localhost:9090
 # ChromaDB 向量库
 VECTOR_HOST=localhost
 VECTOR_PORT=8001
+
+# 阿里云 CMS（可选，用于 ECS/RDS 指标采集）
+ALIYUN_ACCESS_KEY_ID=sk-your-access-key
+ALIYUN_ACCESS_KEY_SECRET=your-secret-key
+ALIYUN_REGION=cn-hangzhou
+ALIYUN_CMS_ENDPOINT=metrics.aliyuncs.com
 ```
 
 完整模板见 [config/.env.example](config/.env.example) 与根目录 [.env.example](.env.example)。
@@ -313,7 +319,7 @@ pytest tests/ -q
 
 ### Phase 2: 增强
 
-- [ ] 阿里云 CMS 集成
+- [x] 阿里云 CMS 集成
 - [ ] 自然语言查询（NL2PromQL）
 - [ ] 飞书/钉钉通知
 - [ ] Web UI
