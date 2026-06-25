@@ -31,6 +31,7 @@ class RemediationPlan(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     approved_by: str | None = Field(default=None)
     execution_output: str | None = Field(default=None)
+    jira_issue_key: str | None = Field(default=None, description="Linked JIRA issue key (e.g. ALERTS-42)")
 
 
 class RemediationExecuteRequest(BaseModel):

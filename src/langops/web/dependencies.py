@@ -12,6 +12,7 @@ from langops.core import settings
 from langops.knowledge import VectorStore
 from langops.services import (
     AlertNoiseReducer,
+    JiraService,
     NotificationService,
     RemediationExecutor,
     RemediationRegistry,
@@ -112,6 +113,25 @@ def get_remediation_executor() -> RemediationExecutor:
             execution_enabled=settings.remediation.execution_enabled,
         )
     return _remediation_executor_singleton
+
+
+_jira_service_singleton: JiraService | None = None
+
+
+def get_jira_service() -> JiraService:
+    """Get shared JIRA integration service (singleton)."""
+    global _jira_service_singleton
+    if _jira_service_singleton is None:
+        jira_settings = settings.jira
+        _jira_service_singleton = JiraService(
+            url=jira_settings.url,
+            username=jira_settings.username,
+            api_token=jira_settings.api_token,
+            project=jira_settings.project,
+            enabled=jira_settings.enabled,
+            timeout=jira_settings.timeout,
+        )
+    return _jira_service_singleton
 
 
 def get_notification_service() -> NotificationService | None:

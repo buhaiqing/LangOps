@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import AnalysisResult, RemediationSuggestion, RootCause
-from langops.services import AlertNoiseReducer, RemediationRegistry
-from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_remediation_registry
+from langops.services import AlertNoiseReducer, JiraService, RemediationRegistry
+from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_jira_service, get_remediation_registry
 from langops.web.main import create_app
 
 
@@ -42,15 +42,22 @@ def remediation_registry() -> RemediationRegistry:
 
 
 @pytest.fixture
+def jira() -> JiraService:
+    return JiraService(url="", username="", api_token="", enabled=False)
+
+
+@pytest.fixture
 def client(
     mock_processor: MagicMock,
     dedup: AlertNoiseReducer,
     remediation_registry: RemediationRegistry,
+    jira: JiraService,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_alert_processor] = lambda: mock_processor
     app.dependency_overrides[get_alert_dedup] = lambda: dedup
     app.dependency_overrides[get_remediation_registry] = lambda: remediation_registry
+    app.dependency_overrides[get_jira_service] = lambda: jira
     return TestClient(app)
 
 

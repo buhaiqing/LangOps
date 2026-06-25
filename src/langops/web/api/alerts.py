@@ -8,8 +8,13 @@ from fastapi import APIRouter, Depends, status
 from langops.agent import AlertProcessor
 from langops.core import settings
 from langops.models import Alert, AlertCreate, AnalysisResponse, DedupInfo
-from langops.services import AlertNoiseReducer, RemediationRegistry
-from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_remediation_registry
+from langops.services import AlertNoiseReducer, JiraService, RemediationRegistry
+from langops.web.dependencies import (
+    get_alert_dedup,
+    get_alert_processor,
+    get_jira_service,
+    get_remediation_registry,
+)
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -26,6 +31,7 @@ async def create_alert(
     processor: AlertProcessor = Depends(get_alert_processor),
     dedup: AlertNoiseReducer = Depends(get_alert_dedup),
     remediation_registry: RemediationRegistry = Depends(get_remediation_registry),
+    jira: JiraService = Depends(get_jira_service),
 ) -> AnalysisResponse:
     """Process a new alert through the AI analysis pipeline."""
     try:
@@ -51,6 +57,28 @@ async def create_alert(
         if settings.remediation.enabled and result.suggestion.commands:
             plan = remediation_registry.create_from_analysis(result)
             plan_id = plan.plan_id
+
+            # Phase A: JIRA ticket creation (best-effort)
+            issue_key = await jira.create_ticket(
+                alert_id=result.alert_id,
+                severity=alert.severity.value,
+                category=alert.category.value,
+                source_type=alert.source.type,
+                system=alert.source.system,
+                resource=alert.source.pod_name or alert.source.instance_id,
+                root_cause=result.root_cause.description,
+                confidence=result.root_cause.confidence,
+                evidence=result.root_cause.evidence,
+                summary=result.suggestion.summary,
+                risk_level=plan.risk_level,
+                steps=result.suggestion.steps,
+                trace_id=result.trace_id,
+                remediation_plan_id=plan_id,
+            )
+            if issue_key:
+                plan.jira_issue_key = issue_key
+                remediation_registry.save(plan)
+
         return AnalysisResponse(
             success=True,
             data=result,

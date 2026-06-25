@@ -105,6 +105,19 @@ class RemediationSettings(BaseSettings):
     execution_enabled: bool = Field(default=False, description="Allow real command execution")
 
 
+class JiraSettings(BaseSettings):
+    """JIRA integration configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="JIRA_")
+
+    url: str = Field(default="", description="JIRA base URL (e.g. https://your-domain.atlassian.net)")
+    username: str = Field(default="", description="JIRA username or email")
+    api_token: str = Field(default="", description="JIRA API token")
+    project: str = Field(default="ALERTS", description="Project key for new issues")
+    enabled: bool = Field(default=False, description="Enable JIRA integration")
+    timeout: int = Field(default=10, ge=1, description="HTTP timeout in seconds")
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -136,6 +149,7 @@ class Settings(BaseSettings):
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
     alert_dedup: AlertDedupSettings = Field(default_factory=AlertDedupSettings)
     remediation: RemediationSettings = Field(default_factory=RemediationSettings)
+    jira: JiraSettings = Field(default_factory=JiraSettings)
 
 
 @lru_cache
