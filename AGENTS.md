@@ -320,10 +320,44 @@ results = await asyncio.gather(
 ### 5.1 实施 MVP 计划
 
 1. 阅读 [MVP 实现计划](docs/superpowers/plans/2026-06-25-langops-mvp-implementation.md) 当前 Task。
-2. 在独立分支/worktree 开发（勿直接在 `main` 上大规模改动）。
+2. **每个 Task 必须在独立 Git Worktree + 功能分支上开发**（禁止在 `main` 上直接改代码）。
 3. 严格按计划中的 **Files** 列表创建/修改文件。
 4. 完成 Task 内 **验证步骤**（运行测试、curl、脚本）后再进入下一 Task。
-5. 遇阻塞（依赖缺失、测试持续失败、指令歧义）**停止并询问**，不猜测。
+5. Task 完成后：合并回 `main` → `git push origin main` → 删除 worktree 与功能分支。
+6. 遇阻塞（依赖缺失、测试持续失败、指令歧义）**停止并询问**，不猜测。
+
+#### Git Worktree 标准流程（每个 Task 强制执行）
+
+Worktree 目录：`.worktrees/<branch-slug>/`（已在 `.gitignore` 中忽略）
+
+```bash
+# 1. 确保 main 最新
+git checkout main && git pull origin main
+
+# 2. 创建 worktree + 功能分支（示例：Task 3）
+git worktree add .worktrees/feat-task3-models -b feat/task3-models
+
+# 3. 进入隔离工作区并安装依赖
+cd .worktrees/feat-task3-models
+python3 -m venv venv && source venv/bin/activate
+pip install -e ".[dev]"
+export LLM_API_KEY=sk-test LANGFUSE_PUBLIC_KEY=pk-test LANGFUSE_SECRET_KEY=sk-lf-test
+pytest tests/ -q   # 基线必须全绿
+
+# 4. 开发、测试、提交（在 worktree 内）
+git add ... && git commit -m "feat(models): ..."
+
+# 5. 合并回 main 并推送
+cd /path/to/LangOps   # 主工作区
+git checkout main && git merge feat/task3-models --no-edit
+git push origin main
+
+# 6. 清理
+git worktree remove .worktrees/feat-task3-models
+git branch -d feat/task3-models
+```
+
+**分支命名**：`feat/task<N>-<short-name>`（如 `feat/task3-models`、`feat/task4-collectors`）。
 
 ### 5.2 代码审查自检清单
 
