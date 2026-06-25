@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LangOps — 智能运维平台</title>
+  <link rel="stylesheet" href="/ui/static/css/app.css" />
+</head>
+<body>
+  <div class="layout">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark">◇</span>
+        <div>
+          <h1>LangOps</h1>
+          <p class="subtitle">AI 智能化运维</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="health-badge" class="badge badge-muted">检查中…</span>
+        <a class="link" href="/docs" target="_blank" rel="noopener">API 文档</a>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="alerts" type="button">告警分析</button>
+      <button class="tab" data-tab="query" type="button">自然语言查询</button>
+    </nav>
+
+    <main>
+      <section id="panel-alerts" class="panel active">
+        <div class="panel-grid">
+          <form id="alert-form" class="card">
+            <h2>提交告警</h2>
+            <p class="hint">填写告警信息，触发根因分析与修复建议。</p>
+
+            <label>标题<input name="title" required value="CPU使用率过高" /></label>
+            <label>描述<textarea name="description" rows="2" required>order-service Pod CPU 超过 90%</textarea></label>
+
+            <div class="row">
+              <label>严重程度
+                <select name="severity">
+                  <option value="critical" selected>critical</option>
+                  <option value="high">high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                </select>
+              </label>
+              <label>类别
+                <select name="category">
+                  <option value="resource" selected>resource</option>
+                  <option value="availability">availability</option>
+                  <option value="performance">performance</option>
+                  <option value="security">security</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="row">
+              <label>来源类型
+                <select name="source_type">
+                  <option value="kubernetes" selected>kubernetes</option>
+                  <option value="aliyun">aliyun</option>
+                  <option value="prometheus">prometheus</option>
+                </select>
+              </label>
+              <label>系统/集群<input name="system" required value="prod-cluster" /></label>
+            </div>
+
+            <div class="row">
+              <label>命名空间<input name="namespace" value="production" /></label>
+              <label>Pod 名称<input name="pod_name" value="order-service-abc123" /></label>
+            </div>
+
+            <label>指标数据 (JSON)<textarea name="metric_data" rows="3">{"cpu_usage_percent": 95.5}</textarea></label>
+
+            <button type="submit" class="btn primary">开始分析</button>
+          </form>
+
+          <div class="card result-card">
+            <h2>分析结果</h2>
+            <pre id="alert-result" class="result">等待提交…</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-query" class="panel">
+        <div class="panel-grid">
+          <form id="query-form" class="card">
+            <h2>NL2PromQL</h2>
+            <p class="hint">用自然语言提问，系统自动生成 PromQL 并查询 Prometheus。</p>
+            <label>问题<textarea name="query" rows="4" required placeholder="例如：过去1小时哪些 Pod CPU 使用率最高？">过去1小时哪些 Pod CPU 使用率最高？</textarea></label>
+            <button type="submit" class="btn primary">查询</button>
+          </form>
+
+          <div class="card result-card">
+            <h2>查询结果</h2>
+            <pre id="query-result" class="result">等待查询…</pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>LangOps v0.1.0</span>
+      <span>Trace 请前往 Langfuse 查看</span>
+    </footer>
+  </div>
+  <script src="/ui/static/js/app.js"></script>
+</body>
+</html>

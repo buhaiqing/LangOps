@@ -27,7 +27,7 @@ LangOps 是一个开源的 AI 智能化运维平台，专注于：
 | 🌐 **告警 API** | ✅ MVP | FastAPI `POST /api/v1/alerts` |
 | 💬 **自然语言查询** | ✅ | NL2PromQL + Prometheus 执行 |
 | 🔔 **智能通知** | ✅ | 飞书/钉钉 Webhook |
-| 🖥️ **Web UI** | 🔜 规划 | React 管理界面 |
+| 🖥️ **Web UI** | ✅ | `/ui` 管理界面 |
 
 ## 📦 MVP 实现进度
 
@@ -102,6 +102,9 @@ python scripts/init_knowledge.py
 
 # 6. 启动 API 服务
 python -m langops.server
+
+# 7. 打开 Web 管理界面
+open http://localhost:8000/ui
 ```
 
 ### 环境变量（`.env`）
@@ -145,6 +148,9 @@ curl http://localhost:8000/health
 # API 文档
 open http://localhost:8000/docs
 
+# Web 管理界面
+open http://localhost:8000/ui
+
 # 运行测试
 pytest tests/ -q
 ```
@@ -160,6 +166,7 @@ pytest tests/ -q
 | GET | `/api/v1/alerts/health` | 告警模块健康检查 |
 | POST | `/api/v1/alerts` | 接收告警并触发 AI 分析 |
 | POST | `/api/v1/query` | 自然语言查询（NL2PromQL） |
+| GET | `/ui` | Web 管理界面 |
 | GET | `/docs` | Swagger API 文档 |
 
 ### 发送测试告警
@@ -224,6 +231,7 @@ LangOps/
 │   ├── services/               # 飞书/钉钉通知
 │   ├── knowledge/              # ChromaDB VectorStore
 │   └── web/                    # FastAPI 应用
+│       ├── static/             # Web UI 静态资源
 │       ├── main.py
 │       ├── dependencies.py
 │       └── api/alerts.py
@@ -322,7 +330,7 @@ pytest tests/ -q
 
 ## 🛣️ 路线图
 
-### Phase 1: MVP（进行中）
+### Phase 1: MVP（已完成）
 
 - [x] 项目脚手架与依赖（pyproject、docker-compose）
 - [x] 核心配置与 Pydantic 数据模型
@@ -335,12 +343,12 @@ pytest tests/ -q
 - [x] 端到端集成测试
 - [x] 知识库初始化脚本
 
-### Phase 2: 增强
+### Phase 2: 增强（已完成）
 
 - [x] 阿里云 CMS 集成
 - [x] 自然语言查询（NL2PromQL）
 - [x] 飞书/钉钉通知
-- [ ] Web UI
+- [x] Web UI
 
 ### Phase 3: 智能化
 
