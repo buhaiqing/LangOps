@@ -26,6 +26,14 @@ from langops.models.prediction import (
 
 from langops.models.dedup import DedupInfo
 
+from langops.models.remediation import (
+    RemediationExecuteRequest,
+    RemediationExecuteResponse,
+    RemediationPlan,
+    RemediationRejectRequest,
+    RemediationStatus,
+)
+
 __all__ = [
     "Alert",
     "AlertCategory",
@@ -46,4 +54,9 @@ __all__ = [
     "PredictRequest",
     "PredictResponse",
     "DedupInfo",
+    "RemediationPlan",
+    "RemediationStatus",
+    "RemediationExecuteRequest",
+    "RemediationExecuteResponse",
+    "RemediationRejectRequest",
 ]

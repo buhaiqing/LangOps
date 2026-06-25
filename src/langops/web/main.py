@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from langops.core import configure_logging, get_logger
-from langops.web.api import alerts, predict, query
+from langops.web.api import alerts, predict, query, remediation
 
 logger = get_logger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts.router, prefix="/api/v1")
     app.include_router(query.router, prefix="/api/v1")
     app.include_router(predict.router, prefix="/api/v1")
+    app.include_router(remediation.router, prefix="/api/v1")
 
     if STATIC_DIR.is_dir():
         app.mount("/ui/static", StaticFiles(directory=STATIC_DIR), name="ui-static")

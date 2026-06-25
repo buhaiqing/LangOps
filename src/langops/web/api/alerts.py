@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, status
 
 from langops.agent import AlertProcessor
+from langops.core import settings
 from langops.models import Alert, AlertCreate, AnalysisResponse, DedupInfo
-from langops.services import AlertNoiseReducer
-from langops.web.dependencies import get_alert_dedup, get_alert_processor
+from langops.services import AlertNoiseReducer, RemediationRegistry
+from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_remediation_registry
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -24,6 +25,7 @@ async def create_alert(
     alert_create: AlertCreate,
     processor: AlertProcessor = Depends(get_alert_processor),
     dedup: AlertNoiseReducer = Depends(get_alert_dedup),
+    remediation_registry: RemediationRegistry = Depends(get_remediation_registry),
 ) -> AnalysisResponse:
     """Process a new alert through the AI analysis pipeline."""
     try:
@@ -45,7 +47,17 @@ async def create_alert(
             return AnalysisResponse(success=True, data=None, error=None, dedup=decision)
 
         result = await processor.process(alert)
-        return AnalysisResponse(success=True, data=result, error=None, dedup=decision)
+        plan_id = None
+        if settings.remediation.enabled and result.suggestion.commands:
+            plan = remediation_registry.create_from_analysis(result)
+            plan_id = plan.plan_id
+        return AnalysisResponse(
+            success=True,
+            data=result,
+            error=None,
+            dedup=decision,
+            remediation_plan_id=plan_id,
+        )
 
     except Exception as exc:
         return AnalysisResponse(success=False, data=None, error=str(exc), dedup=None)

@@ -10,7 +10,12 @@ from langops.agent import AlertProcessor, RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import settings
 from langops.knowledge import VectorStore
-from langops.services import AlertNoiseReducer, NotificationService
+from langops.services import (
+    AlertNoiseReducer,
+    NotificationService,
+    RemediationExecutor,
+    RemediationRegistry,
+)
 
 
 @lru_cache
@@ -85,6 +90,28 @@ def get_alert_dedup() -> AlertNoiseReducer:
             enabled=settings.alert_dedup.enabled,
         )
     return _alert_dedup_singleton
+
+
+_remediation_registry_singleton: RemediationRegistry | None = None
+_remediation_executor_singleton: RemediationExecutor | None = None
+
+
+def get_remediation_registry() -> RemediationRegistry:
+    """Get shared remediation plan registry."""
+    global _remediation_registry_singleton
+    if _remediation_registry_singleton is None:
+        _remediation_registry_singleton = RemediationRegistry()
+    return _remediation_registry_singleton
+
+
+def get_remediation_executor() -> RemediationExecutor:
+    """Get remediation command executor."""
+    global _remediation_executor_singleton
+    if _remediation_executor_singleton is None:
+        _remediation_executor_singleton = RemediationExecutor(
+            execution_enabled=settings.remediation.execution_enabled,
+        )
+    return _remediation_executor_singleton
 
 
 def get_notification_service() -> NotificationService | None:
