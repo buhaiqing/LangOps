@@ -1,0 +1,65 @@
+"""FastAPI dependencies."""
+
+from functools import lru_cache
+
+from langfuse import Langfuse
+
+from langops.agent import AlertProcessor, RCAEngine
+from langops.collectors import PrometheusCollector
+from langops.core import settings
+from langops.knowledge import VectorStore
+
+
+@lru_cache
+def get_langfuse() -> Langfuse:
+    """Get Langfuse client (cached)."""
+    return Langfuse(
+        public_key=settings.langfuse.public_key,
+        secret_key=settings.langfuse.secret_key,
+        host=settings.langfuse.host,
+        release=settings.langfuse.release,
+    )
+
+
+@lru_cache
+def get_vector_store() -> VectorStore:
+    """Get vector store (cached)."""
+    return VectorStore(
+        collection_name=settings.vector_store.collection_name,
+        host=settings.vector_store.host,
+        port=settings.vector_store.port,
+        persist_directory=settings.vector_store.persist_directory,
+    )
+
+
+def get_prometheus_collector() -> PrometheusCollector | None:
+    """Get Prometheus collector if configured."""
+    if not settings.prometheus.url:
+        return None
+
+    return PrometheusCollector(
+        {
+            "url": settings.prometheus.url,
+            "timeout": settings.prometheus.timeout,
+        }
+    )
+
+
+@lru_cache
+def get_rca_engine() -> RCAEngine:
+    """Get RCA engine (cached)."""
+    return RCAEngine(
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+        temperature=settings.llm.temperature,
+    )
+
+
+def get_alert_processor() -> AlertProcessor:
+    """Get alert processor with all dependencies."""
+    return AlertProcessor(
+        langfuse=get_langfuse(),
+        rca_engine=get_rca_engine(),
+        vector_store=get_vector_store(),
+        prometheus_collector=get_prometheus_collector(),
+    )
