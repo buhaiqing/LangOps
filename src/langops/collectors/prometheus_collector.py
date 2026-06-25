@@ -133,6 +133,39 @@ class PrometheusCollector(BaseCollector):
         _ = alert, time_window
         return {"note": "Generic metric collection not yet implemented"}
 
+    async def query_instant(self, query: str) -> list[dict[str, Any]]:
+        """Execute PromQL instant query."""
+        session = await self._get_session()
+        params = {"query": query.strip()}
+        url = f"{self.base_url}/api/v1/query"
+
+        async with session.get(url, params=params) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"Prometheus query failed: {resp.status} - {text}")
+
+            data = await resp.json()
+            if data.get("status") != "success":
+                raise RuntimeError(f"Prometheus error: {data.get('error', 'Unknown')}")
+
+            result = data.get("data", {}).get("result", [])
+            if not isinstance(result, list):
+                return []
+            return self._parse_instant_result(result)
+
+    def _parse_instant_result(self, result: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Parse Prometheus instant query result."""
+        parsed: list[dict[str, Any]] = []
+        for series in result:
+            metric = series.get("metric", {})
+            value = series.get("value", [])
+            entry: dict[str, Any] = {"metric": metric}
+            if len(value) == 2:
+                entry["timestamp"] = float(value[0])
+                entry["value"] = value[1]
+            parsed.append(entry)
+        return parsed
+
     async def _query_range(
         self,
         query: str,

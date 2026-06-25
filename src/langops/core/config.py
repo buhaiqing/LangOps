@@ -71,6 +71,22 @@ class RedisSettings(BaseSettings):
     url: str = Field(default="redis://localhost:6379")
 
 
+class FeishuSettings(BaseSettings):
+    """Feishu notification configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="FEISHU_")
+
+    webhook: str = Field(default="", description="Feishu bot webhook URL")
+
+
+class DingtalkSettings(BaseSettings):
+    """DingTalk notification configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="DINGTALK_")
+
+    webhook: str = Field(default="", description="DingTalk bot webhook URL")
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -98,6 +114,8 @@ class Settings(BaseSettings):
     aliyun: AliyunSettings = Field(default_factory=AliyunSettings)
     vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
+    feishu: FeishuSettings = Field(default_factory=FeishuSettings)
+    dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
 
 
 @lru_cache

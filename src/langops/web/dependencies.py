@@ -4,10 +4,12 @@ from functools import lru_cache
 
 from langfuse import Langfuse
 
+from langops.agent.nl_query_engine import NLQueryEngine
 from langops.agent import AlertProcessor, RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import settings
 from langops.knowledge import VectorStore
+from langops.services import NotificationService
 
 
 @lru_cache
@@ -70,6 +72,27 @@ def get_rca_engine() -> RCAEngine:
     )
 
 
+def get_notification_service() -> NotificationService | None:
+    """Get notification service if any webhook is configured."""
+    if not settings.feishu.webhook and not settings.dingtalk.webhook:
+        return None
+
+    return NotificationService(
+        feishu_webhook=settings.feishu.webhook,
+        dingtalk_webhook=settings.dingtalk.webhook,
+    )
+
+
+def get_nl_query_engine() -> NLQueryEngine:
+    """Get natural language query engine."""
+    return NLQueryEngine(
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+        temperature=settings.llm.temperature,
+        prometheus_collector=get_prometheus_collector(),
+    )
+
+
 def get_alert_processor() -> AlertProcessor:
     """Get alert processor with all dependencies."""
     return AlertProcessor(
@@ -78,4 +101,5 @@ def get_alert_processor() -> AlertProcessor:
         vector_store=get_vector_store(),
         prometheus_collector=get_prometheus_collector(),
         aliyun_collector=get_aliyun_collector(),
+        notification_service=get_notification_service(),
     )

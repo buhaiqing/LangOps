@@ -161,6 +161,38 @@ def build_remediation_prompt(
 """
 
 
+def build_nl_result_prompt(
+    user_query: str,
+    promql: str,
+    query_data: list[dict[str, Any]],
+) -> str:
+    """Build prompt to interpret PromQL query results."""
+    data_str = json.dumps(query_data[:20], ensure_ascii=False, indent=2)
+
+    return f"""将 PromQL 查询结果转换为人类可读的运维报告。
+
+用户问题: {user_query}
+
+PromQL: {promql}
+
+查询结果（JSON，最多20条）:
+```json
+{data_str}
+```
+
+输出 JSON 格式：
+{{
+  "answer": "面向运维人员的简洁回答，包含关键数值与建议",
+  "highlights": ["要点1", "要点2"]
+}}
+
+注意：
+1. 如果结果为空，说明可能无匹配数据或指标不存在
+2. answer 使用中文，2-5句话
+3. 不要编造查询结果中没有的数据
+"""
+
+
 def build_nl_query_prompt(user_query: str, available_metrics: list[str]) -> str:
     """Build prompt for natural language to PromQL conversion."""
     metrics_str = "\n".join([f"- {metric}" for metric in available_metrics[:20]])

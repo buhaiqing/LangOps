@@ -15,6 +15,7 @@ from langops.models.analysis import (
     RootCause,
     SimilarCase,
 )
+from langops.models.query import NLQueryRequest, NLQueryResponse, NLQueryResult
 
 __all__ = [
     "Alert",
@@ -28,4 +29,7 @@ __all__ = [
     "RemediationSuggestion",
     "RootCause",
     "SimilarCase",
+    "NLQueryRequest",
+    "NLQueryResponse",
+    "NLQueryResult",
 ]
