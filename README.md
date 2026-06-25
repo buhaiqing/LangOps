@@ -166,6 +166,7 @@ pytest tests/ -q
 | GET | `/api/v1/alerts/health` | 告警模块健康检查 |
 | POST | `/api/v1/alerts` | 接收告警并触发 AI 分析 |
 | POST | `/api/v1/query` | 自然语言查询（NL2PromQL） |
+| POST | `/api/v1/predict` | 容量趋势预测（预测性运维） |
 | GET | `/ui` | Web 管理界面 |
 | GET | `/docs` | Swagger API 文档 |
 
@@ -205,6 +206,21 @@ curl -X POST http://localhost:8000/api/v1/query \
 
 返回 `answer`（解读）、`promql`（生成的查询）及原始 `data`。
 
+### 容量预测（预测性运维）
+
+```bash
+curl -X POST http://localhost:8000/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource_type": "kubernetes",
+    "namespace": "production",
+    "pod_name": "order-service-abc123",
+    "horizon_hours": 24
+  }'
+```
+
+返回 `overall_risk`、`forecasts`（趋势/预测值）及 `recommendation`。告警分析流程中也会自动写入 `impact_prediction` 字段。
+
 ### 查看 Langfuse Trace
 
 访问 http://localhost:3000 ，使用响应中的 `trace_id` 检索完整分析链路。
@@ -227,7 +243,7 @@ LangOps/
 │   ├── core/                   # 配置、日志、异常
 │   ├── models/                 # Alert、AnalysisResult 等
 │   ├── collectors/             # Prometheus 采集器
-│   ├── agent/                  # AlertProcessor、RCAEngine、NLQueryEngine
+│   ├── agent/                  # AlertProcessor、RCAEngine、PredictiveEngine
 │   ├── services/               # 飞书/钉钉通知
 │   ├── knowledge/              # ChromaDB VectorStore
 │   └── web/                    # FastAPI 应用
@@ -352,7 +368,7 @@ pytest tests/ -q
 
 ### Phase 3: 智能化
 
-- [ ] 预测性运维
+- [x] 预测性运维
 - [ ] 告警降噪
 - [ ] 自动修复建议执行（需人工审批）
 
