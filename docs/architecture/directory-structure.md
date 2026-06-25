@@ -1,19 +1,22 @@
 # LangOps 目录结构说明
 
+> **包名**：`langops`（源码在 `src/langops/`）。与 [AGENTS.md](../../AGENTS.md) 及当前仓库一致；下文「规划中」项尚未创建。
+
 ## 项目根目录
 
 ```
 LangOps/
-├── docs/                       # 文档目录
-├── src/                        # 源代码
-├── tests/                      # 测试代码
-├── config/                     # 配置文件
+├── docs/                       # 文档
+├── src/langops/                # 应用源码（Python 包）
+├── tests/                      # 测试
+├── config/                     # 配置模板
 ├── scripts/                    # 工具脚本
-├── deployment/                 # K8s 部署文件
-├── docker-compose.yml          # 本地开发环境
-├── requirements.txt            # Python 依赖
-├── pyproject.toml              # Python 项目配置
-└── README.md                   # 项目说明
+├── .worktrees/                 # Git worktree（本地，已 gitignore）
+├── docker-compose.yml          # 本地依赖（Langfuse、ChromaDB 等）
+├── pyproject.toml              # 项目元数据与依赖
+├── requirements.txt            # 锁定依赖（可选）
+├── AGENTS.md                   # AI / 开发者规范
+└── README.md
 ```
 
 ## 详细说明
@@ -22,181 +25,104 @@ LangOps/
 
 ```
 docs/
-├── architecture/               # 架构文档
-│   ├── system-design.md        # 系统设计文档（主文档）
-│   ├── directory-structure.md  # 目录结构说明（本文档）
-│   ├── workflow.md             # 工作流详解
-│   └── data-model.md           # 数据模型文档
-├── api/                        # API 文档
-│   ├── openapi.yaml            # OpenAPI 规范
-│   └── examples.md             # API 使用示例
-└── deployment/                 # 部署文档
-    ├── local-setup.md          # 本地开发环境搭建
-    ├── kubernetes.md           # K8s 部署指南
-    └── configuration.md        # 配置详解
+├── architecture/
+│   ├── system-design.md        # 系统设计（主文档）
+│   ├── directory-structure.md  # 本文档
+│   └── quick-reference.md      # 快速参考
+└── superpowers/plans/
+    └── 2026-06-25-langops-mvp-implementation.md  # MVP 实施计划
 ```
 
-### src/ - 源代码
+### src/langops/ - 源代码（实际结构）
 
 ```
-src/
-├── __init__.py                 # 包初始化
-├── agent/                      # AI Agent 核心模块
-│   ├── __init__.py
-│   ├── alert_processor.py      # 告警处理器 - 主入口
-│   ├── rca_engine.py           # 根因分析引擎
-│   ├── suggestion_engine.py    # 修复建议引擎
-│   ├── nl_query_engine.py      # 自然语言查询引擎
-│   └── prompts/                # 提示词模板
-│       ├── rca_prompts.py      # 根因分析提示词
-│       ├── suggestion_prompts.py
-│       └── nl_query_prompts.py
-├── collectors/                 # 数据采集器
-│   ├── __init__.py
-│   ├── base.py                 # 采集器基类
-│   ├── prometheus_collector.py # Prometheus 采集器
-│   ├── aliyun_collector.py     # 阿里云 CMS 采集器
-│   ├── k8s_collector.py        # Kubernetes 采集器
-│   └── loki_collector.py       # Loki 日志采集器
-├── knowledge/                  # 知识库模块
-│   ├── __init__.py
-│   ├── vector_store.py         # 向量存储
-│   ├── case_manager.py         # 案例管理
-│   ├── embedding.py            # 向量化服务
-│   └── retriever.py            # 检索器
-├── web/                        # Web 服务
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI 应用入口
-│   ├── api/                    # API 路由
-│   │   ├── __init__.py
-│   │   ├── alerts.py           # 告警相关接口
-│   │   ├── query.py            # 查询接口
-│   │   ├── knowledge.py        # 知识库接口
-│   │   └── traces.py           # Trace 查询接口
-│   ├── models.py               # Pydantic 模型
-│   ├── dependencies.py         # FastAPI 依赖
-│   └── middleware.py           # 中间件
-├── models/                     # 核心数据模型
-│   ├── __init__.py
-│   ├── alert.py                # 告警模型
-│   ├── analysis.py             # 分析结果模型
-│   ├── knowledge.py            # 知识库模型
-│   └── common.py               # 通用模型
-├── services/                   # 业务服务
-│   ├── __init__.py
-│   ├── notification.py         # 通知服务
-│   ├── jira_integration.py     # JIRA 集成
-│   └── feishu_integration.py   # 飞书集成
-├── observability/              # 可观测性
-│   ├── __init__.py
-│   ├── langfuse_setup.py       # Langfuse 初始化
-│   ├── metrics.py              # Prometheus 指标
-│   └── logging.py              # 日志配置
-├── core/                       # 核心工具
-│   ├── __init__.py
-│   ├── config.py               # 配置管理
-│   ├── exceptions.py           # 自定义异常
-│   └── utils.py                # 工具函数
-└── server.py                   # 服务启动入口
+src/langops/
+├── __init__.py
+├── server.py                   # uvicorn 入口：python -m langops.server
+├── core/
+│   ├── config.py               # pydantic-settings（LLM、Langfuse、降噪、修复等）
+│   ├── exceptions.py
+│   └── logging.py
+├── models/
+│   ├── alert.py
+│   ├── analysis.py             # AnalysisResult、AnalysisResponse、DedupInfo
+│   ├── dedup.py
+│   ├── prediction.py
+│   ├── query.py
+│   ├── remediation.py          # RemediationPlan、审批请求/响应
+│   └── __init__.py
+├── collectors/
+│   ├── base.py
+│   ├── prometheus_collector.py
+│   └── aliyun_cms_collector.py
+├── agent/
+│   ├── alert_processor.py      # 告警处理主流程
+│   ├── rca_engine.py
+│   ├── nl_query_engine.py      # NL2PromQL
+│   ├── predictive_engine.py    # 容量趋势预测
+│   └── prompts.py
+├── knowledge/
+│   └── vector_store.py         # ChromaDB 封装
+├── services/
+│   ├── notification.py         # 飞书 / 钉钉
+│   ├── alert_dedup.py          # 告警降噪
+│   └── remediation_executor.py # 修复计划注册与 kubectl 白名单执行
+└── web/
+    ├── main.py                 # FastAPI create_app、静态 UI 挂载
+    ├── dependencies.py         # DI：processor、registry、executor
+    ├── api/
+    │   ├── alerts.py
+    │   ├── query.py
+    │   ├── predict.py
+    │   └── remediation.py
+    └── static/                 # Web UI（无构建步骤）
+        ├── index.html
+        ├── css/app.css
+        └── js/app.js
 ```
 
-### tests/ - 测试代码
+### tests/ - 测试代码（实际结构）
 
 ```
 tests/
-├── __init__.py
-├── conftest.py                 # pytest 配置
-├── unit/                       # 单元测试
+├── conftest.py                 # 环境变量、FastAPI dependency overrides
+├── unit/
+│   ├── test_core/
+│   ├── test_models/
 │   ├── test_agent/
-│   │   ├── test_alert_processor.py
-│   │   ├── test_rca_engine.py
-│   │   └── test_suggestion_engine.py
 │   ├── test_collectors/
-│   │   ├── test_prometheus_collector.py
-│   │   └── test_aliyun_collector.py
-│   └── test_knowledge/
-│       ├── test_vector_store.py
-│       └── test_case_manager.py
-├── integration/                # 集成测试
-│   ├── test_api/
-│   │   ├── test_alerts_api.py
-│   │   └── test_query_api.py
-│   └── test_workflow/
-│       └── test_alert_processing.py
-├── e2e/                        # 端到端测试
-│   └── test_full_pipeline.py
-└── fixtures/                   # 测试数据
-    ├── alerts/
-    ├── metrics/
-    └── cases/
+│   ├── test_knowledge/
+│   ├── test_services/          # notification、dedup、remediation
+│   ├── test_web/               # API、UI 静态资源
+│   ├── test_scripts/
+│   └── test_server.py
+└── integration/
+    ├── test_e2e.py
+    └── test_ui.py
 ```
+
+运行：`pytest tests/ -q`（当前基线 126 passed）。
 
 ### config/ - 配置文件
 
 ```
 config/
-├── application.yaml            # 主配置文件
-├── application-dev.yaml        # 开发环境配置
-├── application-prod.yaml       # 生产环境配置
-├── prompts/                    # 提示词配置
-│   ├── rca.yaml
-│   ├── suggestion.yaml
-│   └── nl_query.yaml
-└── rules/                      # 业务规则
-    ├── alert_rules.yaml
-    └── rca_rules.yaml
+└── .env.example                # 环境变量模板（与根目录 .env.example 同步维护）
 ```
+
+应用配置通过 **环境变量 + `.env`** 加载，见 `langops.core.config.Settings`。
 
 ### scripts/ - 工具脚本
 
 ```
 scripts/
-├── setup/                      # 初始化脚本
-│   ├── init_db.py              # 数据库初始化
-│   ├── init_knowledge.py       # 知识库初始化
-│   └── create_admin.py         # 创建管理员
-├── maintenance/                # 维护脚本
-│   ├── backup_knowledge.py     # 知识库备份
-│   ├── cleanup_traces.py       # 清理旧 Trace
-│   └── health_check.py         # 健康检查
-├── dev/                        # 开发工具
-│   ├── generate_openapi.py     # 生成 OpenAPI 文档
-│   ├── run_tests.py            # 运行测试
-│   └── lint.sh                 # 代码检查
-└── deployment/                 # 部署脚本
-    ├── build_image.sh          # 构建镜像
-    ├── deploy_k8s.sh           # K8s 部署
-    └── rollback.sh             # 回滚脚本
+└── init_knowledge.py           # 向 ChromaDB 写入示例运维案例
 ```
 
-### deployment/ - K8s 部署文件
+### deployment/ - K8s 部署（规划中）
 
 ```
-deployment/
-├── base/                       # 基础配置
-│   ├── namespace.yaml
-│   ├── configmap.yaml
-│   └── secret.yaml
-├── langops/                    # LangOps 应用
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   └── hpa.yaml               # 自动扩缩容
-├── dependencies/               # 依赖服务
-│   ├── langfuse/              # Langfuse 部署
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── postgres.yaml
-│   ├── chromadb/              # ChromaDB 部署
-│   │   ├── deployment.yaml
-│   │   ├── service.yaml
-│   │   └── pvc.yaml
-│   └── redis/                 # Redis 部署
-│       ├── deployment.yaml
-│       └── service.yaml
-├── monitoring/                 # 监控配置
-│   ├── service-monitor.yaml
-│   └── alerts.yaml
-└── kustomization.yaml         # Kustomize 配置
+deployment/                     # 尚未在仓库中落地，见 system-design.md 目标结构
 ```
 
 ## 关键文件说明
@@ -205,25 +131,26 @@ deployment/
 
 | 文件 | 说明 |
 |-----|------|
-| `src/server.py` | 服务启动入口，初始化 FastAPI 应用 |
-| `src/web/main.py` | FastAPI 应用定义，注册路由和中间件 |
-| `src/agent/alert_processor.py` | 告警处理主逻辑 |
+| `src/langops/server.py` | `python -m langops.server` 启动 uvicorn |
+| `src/langops/web/main.py` | FastAPI 应用、路由注册、`/ui` 静态页 |
+| `src/langops/agent/alert_processor.py` | 告警分析流水线 |
 
 ### 配置文件
 
 | 文件 | 说明 |
 |-----|------|
-| `config/application.yaml` | 主配置文件，包含所有模块配置 |
-| `docker-compose.yml` | 本地开发环境依赖服务定义 |
-| `pyproject.toml` | Python 项目元数据和工具配置 |
+| `config/.env.example` | 环境变量模板 |
+| `.env` | 本地密钥（不提交） |
+| `docker-compose.yml` | Langfuse、ChromaDB、Redis 等 |
+| `pyproject.toml` | 依赖与工具配置 |
 
 ### 核心模型
 
 | 文件 | 说明 |
 |-----|------|
-| `src/models/alert.py` | 告警数据模型定义 |
-| `src/models/analysis.py` | 分析结果数据模型定义 |
-| `src/web/models.py` | API 请求/响应 Pydantic 模型 |
+| `models/alert.py` | 告警输入 |
+| `models/analysis.py` | 分析结果与 API 响应（含 `dedup`、`remediation_plan_id`） |
+| `models/remediation.py` | 修复审批计划 |
 
 ## 编码规范
 
@@ -277,17 +204,18 @@ from langops.core.config import settings
 
 ```bash
 # 启动本地开发环境
-docker-compose up -d
+docker compose up -d
 
-# 运行单元测试
-pytest tests/unit -v
+# 启动 API
+python -m langops.server
 
-# 运行特定测试
-pytest tests/unit/test_agent/test_alert_processor.py::test_process_alert -v
+# 运行测试
+pytest tests/ -q
 
-# 查看 Langfuse UI
-open http://localhost:3000
-
-# 查看 API 文档
+# Web UI / API 文档
+open http://localhost:8000/ui
 open http://localhost:8000/docs
+
+# Langfuse UI
+open http://localhost:3000
 ```

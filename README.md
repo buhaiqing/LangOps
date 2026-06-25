@@ -27,7 +27,10 @@ LangOps 是一个开源的 AI 智能化运维平台，专注于：
 | 🌐 **告警 API** | ✅ MVP | FastAPI `POST /api/v1/alerts` |
 | 💬 **自然语言查询** | ✅ | NL2PromQL + Prometheus 执行 |
 | 🔔 **智能通知** | ✅ | 飞书/钉钉 Webhook |
-| 🖥️ **Web UI** | ✅ | `/ui` 管理界面 |
+| 🖥️ **Web UI** | ✅ | `/ui`：告警 / NL2PromQL / 容量预测 / 修复审批 |
+| 📈 **预测性运维** | ✅ | `POST /api/v1/predict`，告警内 `impact_prediction` |
+| 🔇 **告警降噪** | ✅ | 窗口内重复告警 suppress，可配置窗口 |
+| 🛠️ **修复审批** | ✅ | kubectl 白名单 + dry-run，Web UI 与 API |
 
 ## 📦 MVP 实现进度
 
@@ -68,6 +71,9 @@ LangOps 是一个开源的 AI 智能化运维平台，专注于：
                           │  (全链路 Trace)  │
                           └─────────────────┘
 ```
+
+Phase 2–3 扩展：`services/`（通知、降噪、修复）、`predictive_engine`、`web/static`。  
+详细架构见 [docs/architecture/system-design.md](docs/architecture/system-design.md)。
 
 ## 🚀 快速开始
 
@@ -352,6 +358,14 @@ results = await store.search(query="数据库连接问题", top_k=3)
 
 ## 🛠️ 开发
 
+### 架构文档
+
+| 文档 | 说明 |
+|------|------|
+| [system-design.md](docs/architecture/system-design.md) | 系统设计、工作流、演进路线 |
+| [directory-structure.md](docs/architecture/directory-structure.md) | 目录结构与关键文件 |
+| [quick-reference.md](docs/architecture/quick-reference.md) | API / 配置 / 命令速查 |
+
 ### 本地命令
 
 ```bash
@@ -407,6 +421,13 @@ pytest tests/ -q
 - [x] 预测性运维
 - [x] 告警降噪
 - [x] 自动修复建议执行（需人工审批）
+
+### Phase 4: 生产化（规划中）
+
+- [ ] 认证与 RBAC
+- [ ] 降噪 / 修复计划持久化（Redis/DB）
+- [ ] JIRA 集成
+- [ ] Loki / K8s Events 采集扩展
 
 ## 📄 许可证
 
