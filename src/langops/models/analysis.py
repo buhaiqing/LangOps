@@ -84,3 +84,7 @@ class AnalysisResponse(BaseModel):
     data: AnalysisResult | None = Field(default=None, description="Analysis result")
     error: str | None = Field(default=None, description="Error message if failed")
     dedup: DedupInfo | None = Field(default=None, description="Noise reduction metadata")
+    remediation_plan_id: str | None = Field(
+        default=None,
+        description="Remediation plan ID for approval workflow",
+    )

@@ -96,6 +96,15 @@ class AlertDedupSettings(BaseSettings):
     window_seconds: int = Field(default=900, ge=60, le=86400, description="Dedup window in seconds")
 
 
+class RemediationSettings(BaseSettings):
+    """Remediation execution configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="REMEDIATION_")
+
+    enabled: bool = Field(default=True, description="Register remediation plans after analysis")
+    execution_enabled: bool = Field(default=False, description="Allow real command execution")
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -126,6 +135,7 @@ class Settings(BaseSettings):
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
     alert_dedup: AlertDedupSettings = Field(default_factory=AlertDedupSettings)
+    remediation: RemediationSettings = Field(default_factory=RemediationSettings)
 
 
 @lru_cache

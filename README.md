@@ -139,6 +139,10 @@ DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
 # 告警降噪（默认 15 分钟窗口内重复告警跳过 LLM 分析）
 ALERT_DEDUP_ENABLED=true
 ALERT_DEDUP_WINDOW_SECONDS=900
+
+# 自动修复（需人工审批；默认 dry-run，不执行真实 kubectl）
+REMEDIATION_ENABLED=true
+REMEDIATION_EXECUTION_ENABLED=false
 ```
 
 完整模板见 [config/.env.example](config/.env.example) 与根目录 [.env.example](.env.example)。
@@ -172,6 +176,9 @@ pytest tests/ -q
 | GET | `/api/v1/alerts/dedup/stats` | 降噪活跃分组统计 |
 | POST | `/api/v1/query` | 自然语言查询（NL2PromQL） |
 | POST | `/api/v1/predict` | 容量趋势预测（预测性运维） |
+| GET | `/api/v1/remediation` | 待审批修复计划列表 |
+| POST | `/api/v1/remediation/{plan_id}/execute` | 审批并执行（或 dry-run） |
+| POST | `/api/v1/remediation/{plan_id}/reject` | 拒绝修复计划 |
 | GET | `/ui` | Web 管理界面 |
 | GET | `/docs` | Swagger API 文档 |
 
@@ -228,6 +235,28 @@ curl -X POST http://localhost:8000/api/v1/predict \
 
 返回 `overall_risk`、`forecasts`（趋势/预测值）及 `recommendation`。告警分析流程中也会自动写入 `impact_prediction` 字段。
 
+### 自动修复（人工审批）
+
+告警分析若包含 `commands`，响应会附带 `remediation_plan_id`。仅 **低风险** 且符合 kubectl 白名单的命令可自动执行。
+
+```bash
+# 1. 提交告警后获取 remediation_plan_id
+# 2. 查看计划
+curl http://localhost:8000/api/v1/remediation/plan-xxxxxxxx
+
+# 3. Dry-run（默认推荐，不执行真实命令）
+curl -X POST http://localhost:8000/api/v1/remediation/plan-xxxxxxxx/execute \
+  -H "Content-Type: application/json" \
+  -d '{"approved_by": "ops-user", "confirm": true, "dry_run": true}'
+
+# 4. 真实执行（需 REMEDIATION_EXECUTION_ENABLED=true）
+curl -X POST http://localhost:8000/api/v1/remediation/plan-xxxxxxxx/execute \
+  -H "Content-Type: application/json" \
+  -d '{"approved_by": "ops-user", "confirm": true, "dry_run": false}'
+```
+
+白名单示例：`kubectl scale`、`kubectl patch`、`kubectl rollout restart`、`kubectl set resources`。`delete`/`exec` 等高风险命令仅支持人工执行。
+
 ### 查看 Langfuse Trace
 
 访问 http://localhost:3000 ，使用响应中的 `trace_id` 检索完整分析链路。
@@ -251,7 +280,7 @@ LangOps/
 │   ├── models/                 # Alert、AnalysisResult 等
 │   ├── collectors/             # Prometheus 采集器
 │   ├── agent/                  # AlertProcessor、RCAEngine、PredictiveEngine
-│   ├── services/               # 飞书/钉钉通知
+│   ├── services/               # 通知、降噪、修复执行
 │   ├── knowledge/              # ChromaDB VectorStore
 │   └── web/                    # FastAPI 应用
 │       ├── static/             # Web UI 静态资源
@@ -373,11 +402,11 @@ pytest tests/ -q
 - [x] 飞书/钉钉通知
 - [x] Web UI
 
-### Phase 3: 智能化
+### Phase 3: 智能化（已完成）
 
 - [x] 预测性运维
 - [x] 告警降噪
-- [ ] 自动修复建议执行（需人工审批）
+- [x] 自动修复建议执行（需人工审批）
 
 ## 📄 许可证
 

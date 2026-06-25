@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import AnalysisResult, RemediationSuggestion, RootCause
-from langops.services import AlertNoiseReducer
-from langops.web.dependencies import get_alert_dedup, get_alert_processor
+from langops.services import AlertNoiseReducer, RemediationRegistry
+from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_remediation_registry
 from langops.web.main import create_app
 
 
@@ -20,7 +20,11 @@ def mock_processor() -> MagicMock:
             alert_id="alert-deadbeef",
             trace_id="trace-123",
             root_cause=RootCause(category="资源不足", description="CPU limit 过低", confidence=0.9),
-            suggestion=RemediationSuggestion(summary="调高 limit", steps=["step1"]),
+            suggestion=RemediationSuggestion(
+                summary="调高 limit",
+                steps=["step1"],
+                commands=["kubectl scale deployment/order --replicas=3"],
+            ),
             processing_time_seconds=1.2,
         )
     )
@@ -33,10 +37,20 @@ def dedup() -> AlertNoiseReducer:
 
 
 @pytest.fixture
-def client(mock_processor: MagicMock, dedup: AlertNoiseReducer) -> TestClient:
+def remediation_registry() -> RemediationRegistry:
+    return RemediationRegistry()
+
+
+@pytest.fixture
+def client(
+    mock_processor: MagicMock,
+    dedup: AlertNoiseReducer,
+    remediation_registry: RemediationRegistry,
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_alert_processor] = lambda: mock_processor
     app.dependency_overrides[get_alert_dedup] = lambda: dedup
+    app.dependency_overrides[get_remediation_registry] = lambda: remediation_registry
     return TestClient(app)
 
 
@@ -82,6 +96,8 @@ def test_create_alert_success(client: TestClient, mock_processor: MagicMock) -> 
     assert body["success"] is True
     assert body["data"]["trace_id"] == "trace-123"
     assert body["data"]["root_cause"]["category"] == "资源不足"
+    assert body["remediation_plan_id"] is not None
+    assert body["remediation_plan_id"].startswith("plan-")
     assert body["dedup"]["action"] == "process"
     mock_processor.process.assert_awaited_once()
 
