@@ -17,6 +17,13 @@ from langops.models.analysis import (
 )
 from langops.models.query import NLQueryRequest, NLQueryResponse, NLQueryResult
 
+from langops.models.prediction import (
+    ImpactPrediction,
+    MetricForecast,
+    PredictRequest,
+    PredictResponse,
+)
+
 __all__ = [
     "Alert",
     "AlertCategory",
@@ -32,4 +39,8 @@ __all__ = [
     "NLQueryRequest",
     "NLQueryResponse",
     "NLQueryResult",
+    "ImpactPrediction",
+    "MetricForecast",
+    "PredictRequest",
+    "PredictResponse",
 ]

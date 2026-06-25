@@ -5,6 +5,7 @@ from functools import lru_cache
 from langfuse import Langfuse
 
 from langops.agent.nl_query_engine import NLQueryEngine
+from langops.agent.predictive_engine import PredictiveEngine
 from langops.agent import AlertProcessor, RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import settings
@@ -83,6 +84,14 @@ def get_notification_service() -> NotificationService | None:
     )
 
 
+def get_predictive_engine() -> PredictiveEngine:
+    """Get predictive operations engine."""
+    return PredictiveEngine(
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+    )
+
+
 def get_nl_query_engine() -> NLQueryEngine:
     """Get natural language query engine."""
     return NLQueryEngine(
@@ -102,4 +111,5 @@ def get_alert_processor() -> AlertProcessor:
         prometheus_collector=get_prometheus_collector(),
         aliyun_collector=get_aliyun_collector(),
         notification_service=get_notification_service(),
+        predictive_engine=get_predictive_engine(),
     )

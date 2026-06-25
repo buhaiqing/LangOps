@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from langfuse import Langfuse, observe, propagate_attributes
 
+from langops.agent.predictive_engine import PredictiveEngine
 from langops.agent.rca_engine import RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import get_logger
@@ -34,6 +35,7 @@ class AlertProcessor:
         prometheus_collector: PrometheusCollector | None = None,
         aliyun_collector: AliyunCmsCollector | None = None,
         notification_service: NotificationService | None = None,
+        predictive_engine: PredictiveEngine | None = None,
     ) -> None:
         self.langfuse = langfuse
         self.rca_engine = rca_engine
@@ -41,6 +43,7 @@ class AlertProcessor:
         self.prometheus_collector = prometheus_collector
         self.aliyun_collector = aliyun_collector
         self.notification_service = notification_service
+        self.predictive_engine = predictive_engine
         logger.info("AlertProcessor initialized")
 
     @observe(as_type="agent")
@@ -71,6 +74,7 @@ class AlertProcessor:
                     alert,
                     context,
                 )
+                impact_prediction = await self._predict_impact(alert, context, root_cause)
 
                 processing_time = time.time() - start_time
                 trace_id = self.langfuse.get_current_trace_id() or f"local-{alert.id}"
@@ -81,7 +85,7 @@ class AlertProcessor:
                     root_cause=root_cause,
                     similar_cases=similar_cases,
                     suggestion=suggestion,
-                    impact_prediction={"affected_service": alert.source.service},
+                    impact_prediction=impact_prediction,
                     processing_time_seconds=processing_time,
                 )
 
@@ -228,3 +232,24 @@ class AlertProcessor:
             similar_cases=similar_cases,
             alert_context=alert_context,
         )
+
+    @observe(as_type="span")
+    async def _predict_impact(
+        self,
+        alert: Alert,
+        context: AlertContext,
+        root_cause: RootCause,
+    ) -> dict:
+        """Predict future impact from metric trends."""
+        if self.predictive_engine:
+            try:
+                prediction = await self.predictive_engine.predict_impact(
+                    alert,
+                    context,
+                    root_cause,
+                )
+                return prediction.model_dump()
+            except Exception as exc:
+                logger.warning("Impact prediction failed", alert_id=alert.id, error=str(exc))
+
+        return {"affected_service": alert.source.service, "overall_risk": "unknown"}

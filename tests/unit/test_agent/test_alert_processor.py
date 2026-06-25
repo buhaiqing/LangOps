@@ -152,6 +152,41 @@ async def test_process_sends_notification_when_configured() -> None:
 
 
 @pytest.mark.asyncio
+async def test_process_includes_impact_prediction_when_engine_configured() -> None:
+    langfuse = MagicMock()
+    langfuse.get_current_trace_id.return_value = "trace-predict"
+
+    rca_engine = MagicMock()
+    rca_engine.analyze = AsyncMock(
+        return_value=RootCause(category="资源不足", description="CPU 过高", confidence=0.9)
+    )
+    rca_engine.generate_remediation = AsyncMock(
+        return_value=RemediationSuggestion(summary="扩容", steps=["step1"])
+    )
+
+    vector_store = MagicMock()
+    vector_store.search = AsyncMock(return_value=[])
+
+    predictive = MagicMock()
+    predictive.predict_impact = AsyncMock(
+        return_value=MagicMock(
+            model_dump=lambda: {"overall_risk": "high", "recommendation": "提前扩容"}
+        )
+    )
+
+    processor = AlertProcessor(
+        langfuse=langfuse,
+        rca_engine=rca_engine,
+        vector_store=vector_store,
+        predictive_engine=predictive,
+    )
+
+    result = await processor.process(_alert())
+    assert result.impact_prediction["overall_risk"] == "high"
+    predictive.predict_impact.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_process_returns_analysis_result(processor: AlertProcessor) -> None:
     result = await processor.process(_alert())
 

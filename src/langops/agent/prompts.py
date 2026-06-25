@@ -193,6 +193,34 @@ PromQL: {promql}
 """
 
 
+def build_impact_prediction_prompt(
+    title: str,
+    context: str,
+    prediction: dict[str, Any],
+) -> str:
+    """Build prompt for proactive impact recommendation."""
+    forecasts_str = json.dumps(prediction.get("forecasts", [])[:10], ensure_ascii=False, indent=2)
+
+    return f"""基于指标趋势预测，给出简洁的预测性运维建议。
+
+场景: {title}
+背景: {context}
+预测窗口: {prediction.get("horizon_hours", 24)} 小时
+综合风险: {prediction.get("overall_risk", "unknown")}
+
+指标预测:
+```json
+{forecasts_str}
+```
+
+输出 JSON:
+{{
+  "recommendation": "2-4句话的中文建议，包含是否需提前扩容、何时介入、观察指标",
+  "priority": "immediate | soon | monitor"
+}}
+"""
+
+
 def build_nl_query_prompt(user_query: str, available_metrics: list[str]) -> str:
     """Build prompt for natural language to PromQL conversion."""
     metrics_str = "\n".join([f"- {metric}" for metric in available_metrics[:20]])
