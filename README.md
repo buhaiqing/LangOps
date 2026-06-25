@@ -25,8 +25,8 @@ LangOps 是一个开源的 AI 智能化运维平台，专注于：
 | 🔍 **RAG 知识库** | ✅ MVP | ChromaDB 向量检索历史案例 |
 | 📡 **Prometheus 采集** | ✅ MVP | K8s Pod 指标采集 |
 | 🌐 **告警 API** | ✅ MVP | FastAPI `POST /api/v1/alerts` |
-| 💬 **自然语言查询** | 🔜 规划 | NL2PromQL |
-| 🔔 **智能通知** | 🔜 规划 | 飞书/钉钉/Slack |
+| 💬 **自然语言查询** | ✅ | NL2PromQL + Prometheus 执行 |
+| 🔔 **智能通知** | ✅ | 飞书/钉钉 Webhook |
 | 🖥️ **Web UI** | 🔜 规划 | React 管理界面 |
 
 ## 📦 MVP 实现进度
@@ -128,6 +128,10 @@ ALIYUN_ACCESS_KEY_ID=sk-your-access-key
 ALIYUN_ACCESS_KEY_SECRET=your-secret-key
 ALIYUN_REGION=cn-hangzhou
 ALIYUN_CMS_ENDPOINT=metrics.aliyuncs.com
+
+# 通知（告警分析完成后推送）
+FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
 ```
 
 完整模板见 [config/.env.example](config/.env.example) 与根目录 [.env.example](.env.example)。
@@ -155,6 +159,7 @@ pytest tests/ -q
 | GET | `/health` | 健康检查 |
 | GET | `/api/v1/alerts/health` | 告警模块健康检查 |
 | POST | `/api/v1/alerts` | 接收告警并触发 AI 分析 |
+| POST | `/api/v1/query` | 自然语言查询（NL2PromQL） |
 | GET | `/docs` | Swagger API 文档 |
 
 ### 发送测试告警
@@ -181,6 +186,18 @@ curl -X POST http://localhost:8000/api/v1/alerts \
 
 成功时返回 `AnalysisResponse`：`success`、`data`（含 `trace_id`、`root_cause`、`suggestion`）或 `error`。
 
+配置 `FEISHU_WEBHOOK` / `DINGTALK_WEBHOOK` 后，分析成功会自动推送通知。
+
+### 自然语言查询（NL2PromQL）
+
+```bash
+curl -X POST http://localhost:8000/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "过去1小时哪些 Pod CPU 使用率最高？"}'
+```
+
+返回 `answer`（解读）、`promql`（生成的查询）及原始 `data`。
+
 ### 查看 Langfuse Trace
 
 访问 http://localhost:3000 ，使用响应中的 `trace_id` 检索完整分析链路。
@@ -203,7 +220,8 @@ LangOps/
 │   ├── core/                   # 配置、日志、异常
 │   ├── models/                 # Alert、AnalysisResult 等
 │   ├── collectors/             # Prometheus 采集器
-│   ├── agent/                  # AlertProcessor、RCAEngine、prompts
+│   ├── agent/                  # AlertProcessor、RCAEngine、NLQueryEngine
+│   ├── services/               # 飞书/钉钉通知
 │   ├── knowledge/              # ChromaDB VectorStore
 │   └── web/                    # FastAPI 应用
 │       ├── main.py
@@ -320,8 +338,8 @@ pytest tests/ -q
 ### Phase 2: 增强
 
 - [x] 阿里云 CMS 集成
-- [ ] 自然语言查询（NL2PromQL）
-- [ ] 飞书/钉钉通知
+- [x] 自然语言查询（NL2PromQL）
+- [x] 飞书/钉钉通知
 - [ ] Web UI
 
 ### Phase 3: 智能化
