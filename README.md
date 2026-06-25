@@ -135,6 +135,10 @@ ALIYUN_CMS_ENDPOINT=metrics.aliyuncs.com
 # 通知（告警分析完成后推送）
 FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
 DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
+
+# 告警降噪（默认 15 分钟窗口内重复告警跳过 LLM 分析）
+ALERT_DEDUP_ENABLED=true
+ALERT_DEDUP_WINDOW_SECONDS=900
 ```
 
 完整模板见 [config/.env.example](config/.env.example) 与根目录 [.env.example](.env.example)。
@@ -164,7 +168,8 @@ pytest tests/ -q
 | GET | `/` | 服务信息 |
 | GET | `/health` | 健康检查 |
 | GET | `/api/v1/alerts/health` | 告警模块健康检查 |
-| POST | `/api/v1/alerts` | 接收告警并触发 AI 分析 |
+| POST | `/api/v1/alerts` | 接收告警并触发 AI 分析（含降噪） |
+| GET | `/api/v1/alerts/dedup/stats` | 降噪活跃分组统计 |
 | POST | `/api/v1/query` | 自然语言查询（NL2PromQL） |
 | POST | `/api/v1/predict` | 容量趋势预测（预测性运维） |
 | GET | `/ui` | Web 管理界面 |
@@ -195,6 +200,8 @@ curl -X POST http://localhost:8000/api/v1/alerts \
 成功时返回 `AnalysisResponse`：`success`、`data`（含 `trace_id`、`root_cause`、`suggestion`）或 `error`。
 
 配置 `FEISHU_WEBHOOK` / `DINGTALK_WEBHOOK` 后，分析成功会自动推送通知。
+
+告警降噪默认开启：同一资源在 `ALERT_DEDUP_WINDOW_SECONDS`（默认 900 秒）内的重复告警会返回 `dedup.action=suppress`，跳过 LLM 分析。响应中的 `dedup` 字段包含指纹与出现次数。
 
 ### 自然语言查询（NL2PromQL）
 
@@ -369,7 +376,7 @@ pytest tests/ -q
 ### Phase 3: 智能化
 
 - [x] 预测性运维
-- [ ] 告警降噪
+- [x] 告警降噪
 - [ ] 自动修复建议执行（需人工审批）
 
 ## 📄 许可证

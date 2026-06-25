@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import AnalysisResult, RemediationSuggestion, RootCause
-from langops.web.dependencies import get_alert_processor
+from langops.services import AlertNoiseReducer
+from langops.web.dependencies import get_alert_dedup, get_alert_processor
 from langops.web.main import app
 
 # Required before langops.core imports (Settings validates nested secrets at load time).
@@ -39,7 +40,9 @@ def mock_processor() -> MagicMock:
 @pytest.fixture
 def client(mock_processor: MagicMock) -> Generator[TestClient, None, None]:
     """Create test client with mocked alert processor."""
+    dedup = AlertNoiseReducer(window_seconds=900, enabled=True)
     app.dependency_overrides[get_alert_processor] = lambda: mock_processor
+    app.dependency_overrides[get_alert_dedup] = lambda: dedup
     try:
         yield TestClient(app)
     finally:

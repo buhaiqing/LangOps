@@ -24,6 +24,8 @@ from langops.models.prediction import (
     PredictResponse,
 )
 
+from langops.models.dedup import DedupInfo
+
 __all__ = [
     "Alert",
     "AlertCategory",
@@ -43,4 +45,5 @@ __all__ = [
     "MetricForecast",
     "PredictRequest",
     "PredictResponse",
+    "DedupInfo",
 ]
