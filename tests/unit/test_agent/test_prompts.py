@@ -56,7 +56,7 @@ def test_build_rca_prompt_truncates_logs_and_events() -> None:
 
     assert "log-9" in prompt
     assert "log-10" not in prompt
-  # only first 10 logs
+    # only first 10 logs
     assert '"id": 4' in prompt
     assert '"id": 5' not in prompt  # only first 5 events
 

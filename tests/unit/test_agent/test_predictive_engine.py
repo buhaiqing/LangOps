@@ -43,7 +43,9 @@ def test_analyze_metrics_handles_empty_metrics(engine: PredictiveEngine) -> None
 
 
 def test_forecast_series_stable_with_single_point(engine: PredictiveEngine) -> None:
-    forecast = engine._forecast_series("memory_usage", [0.6], horizon_hours=24, thresholds={"memory": 0.9})
+    forecast = engine._forecast_series(
+        "memory_usage", [0.6], horizon_hours=24, thresholds={"memory": 0.9}
+    )
     assert forecast is not None
     assert forecast.trend == "stable"
     assert forecast.risk_level == "low"

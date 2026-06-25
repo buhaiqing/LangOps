@@ -49,7 +49,9 @@ class Alert(BaseModel):
     severity: AlertSeverity = Field(..., description="Alert severity")
     category: AlertCategory = Field(..., description="Alert category")
     source: AlertSource = Field(..., description="Alert source")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Alert timestamp")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC), description="Alert timestamp"
+    )
     metric_data: dict[str, Any] = Field(default_factory=dict, description="Raw metric data")
     log_snippets: list[str] = Field(default_factory=list, description="Related log snippets")
     related_events: list[str] = Field(default_factory=list, description="Related event IDs")

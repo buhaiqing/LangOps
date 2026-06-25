@@ -72,7 +72,6 @@ class AlertProcessor:
                     root_cause,
                     similar_cases,
                     alert,
-                    context,
                 )
                 impact_prediction = await self._predict_impact(alert, context, root_cause)
 
@@ -217,10 +216,8 @@ class AlertProcessor:
         root_cause: RootCause,
         similar_cases: list[SimilarCase],
         alert: Alert,
-        context: AlertContext,
     ) -> RemediationSuggestion:
         """Generate remediation suggestion."""
-        _ = context
         alert_context = {
             "service": alert.source.service or "unknown",
             "namespace": alert.source.namespace or "unknown",

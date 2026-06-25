@@ -4,13 +4,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import generate_latest
 
 from langops.core import configure_logging, get_logger
+from langops.storage import close_storage, get_storage
 from langops.web.api import alerts, predict, query, remediation
+from langops.web.dependencies import close_notification_service
+from langops.web.metrics import PROMETHEUS_CONTENT_TYPE
+from langops.web.middleware import RequestIDMiddleware
 
 logger = get_logger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -18,10 +23,12 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
     configure_logging()
     logger.info("LangOps starting up", version="0.1.0")
+    await get_storage()
     yield
+    await close_notification_service()
+    await close_storage()
     logger.info("LangOps shutting down")
 
 
@@ -33,6 +40,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # Request tracing middleware — must be added first (outermost)
+    app.add_middleware(RequestIDMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -60,6 +70,14 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Health check endpoint."""
         return {"status": "healthy", "version": "0.1.0"}
+
+    @app.get("/metrics")
+    async def metrics() -> Response:
+        """Prometheus metrics endpoint."""
+        return PlainTextResponse(
+            content=generate_latest(),
+            media_type=PROMETHEUS_CONTENT_TYPE,
+        )
 
     @app.get("/")
     async def root() -> dict[str, Any]:

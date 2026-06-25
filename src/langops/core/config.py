@@ -110,12 +110,26 @@ class JiraSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="JIRA_")
 
-    url: str = Field(default="", description="JIRA base URL (e.g. https://your-domain.atlassian.net)")
+    url: str = Field(
+        default="", description="JIRA base URL (e.g. https://your-domain.atlassian.net)"
+    )
     username: str = Field(default="", description="JIRA username or email")
     api_token: str = Field(default="", description="JIRA API token")
     project: str = Field(default="ALERTS", description="Project key for new issues")
     enabled: bool = Field(default=False, description="Enable JIRA integration")
     timeout: int = Field(default=10, ge=1, description="HTTP timeout in seconds")
+
+
+class StorageSettings(BaseSettings):
+    """Storage configuration — SQLite by default, PostgreSQL optional."""
+
+    model_config = SettingsConfigDict(env_prefix="STORAGE_")
+
+    url: str = Field(
+        default="sqlite:///.langops/data.db",
+        description="Database URL (sqlite:// or postgresql://)",
+    )
+    echo: bool = Field(default=False, description="Log SQL statements")
 
 
 class Settings(BaseSettings):
@@ -150,6 +164,7 @@ class Settings(BaseSettings):
     alert_dedup: AlertDedupSettings = Field(default_factory=AlertDedupSettings)
     remediation: RemediationSettings = Field(default_factory=RemediationSettings)
     jira: JiraSettings = Field(default_factory=JiraSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
 
 @lru_cache

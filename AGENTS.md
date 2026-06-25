@@ -31,6 +31,16 @@
 4. **接口隔离**：采集器等可替换组件继承 `BaseCollector` 抽象基类。
 5. **配置外置**：可配置项放 `config/` 与 `.env`；代码通过 `pydantic-settings` 的 `Settings` 读取，禁止硬编码密钥或 URL。
 6. **最小 diff**：只改完成任务所需的文件；不重构无关代码；不新增未请求的依赖。
+7. **TDD（测试驱动开发）**：严格执行红-绿-重构循环——先写失败测试，再写最小实现使测试通过，最后重构。代码变动完成后必须执行全量测试并通过，才能进入下一个需求迭代。**禁止跳过测试直接提交代码。**
+
+### 1.1a Karpathy 编码准则
+
+> 来源：[Andrej Karpathy](https://x.com/karpathy/status/2015883857489522876) 对 LLM 编码常见错误的观察。偏向谨慎而非速度。
+
+1. **先想再写**：不要假设，不要隐藏困惑，明确表达权衡。实现前：显式声明假设；多种解释并存时列出而非静默选择；更简单的方案主动提出；不确定就停下来问。
+2. **简单优先**：只写解决问题的最小代码。不做未要求的功能，不为单次使用抽象，不加未请求的"灵活性"，不处理不可能的场景。写 200 行能 50 行解决就重写。自问："高级工程师会觉得这过度复杂吗？"
+3. **外科手术式改动**：只动必须动的。不"改进"相邻代码/注释/格式；不重构没坏的东西；匹配现有风格；发现无关死代码只提不删。每个改动的行都应直接追溯到用户需求。
+4. **目标驱动执行**：把任务转为可验证目标。多步任务先列简要计划并逐步验证。强成功标准让你能独立循环，弱标准（"能跑就行"）需要反复确认。
 
 ### 1.2 目录与文件约定
 
@@ -115,18 +125,65 @@ from langops.models import Alert
 - 继承 `LangOpsException` 体系：`ConfigurationError`、`CollectorError`、`LLMError`、`VectorStoreError`、`AnalysisError`。
 - 捕获后记录结构化日志，再向上抛或转为 API 错误响应；禁止裸 `except:`。
 - 自定义异常携带上下文（如 `CollectorError(message, source="prometheus")`）。
+- **Best-effort 外部调用**：非关键路径的外部服务（通知、JIRA、向量库等）失败时不阻断主流程——catch 后打日志，继续返回成功响应。关键路径（LLM 推理、核心数据写入）失败时才向上抛异常。每个 best-effort 调用必须在代码中标注 `# best-effort: <failure behavior>` 注释。
 
-**日志**
+**结构化日志**
 
 - 使用 `structlog`（`get_logger(__name__)`）；禁止 `print()` 调试残留。
 - 生产环境 JSON 输出；`DEBUG=true` 时 Console 渲染。
 - 日志字段用 snake_case 键名：`logger.error("LLM analysis failed", error=str(e), model=model)`。
+- **每个模块入口**（`__init__.py` 或模块顶层）必须初始化 logger：`logger = get_logger(__name__)`。
+- **禁止在函数体内重复导入或创建 logger**——始终使用模块级实例。
+
+**日志滚动与归档**
+
+- 生产环境日志文件必须启用自动滚动：`logging.handlers.RotatingFileHandler`（按大小）或 `TimedRotatingFileHandler`（按时间）。
+- 默认配置：单文件上限 **10MB**，保留 **7 天**或 **5 个备份文件**。
+- 日志路径通过 `Settings.log_file` 配置，默认 `logs/langops.log`。
+- Docker/K8s 部署时，同时输出到 stdout（容器日志采集）和文件（本地排查）。
+- 日志目录 `.gitignore` 忽略；禁止提交日志文件。
+
+**请求生命周期日志**
+
+- FastAPI 中间件记录每个请求的：`method`、`path`、`status_code`、`duration_ms`、`request_id`。
+- `request_id` 通过 `X-Request-ID` header 传入或自动生成 UUID，贯穿整个请求链路。
+- 所有下游调用（LLM、采集器、向量库）的日志必须包含 `request_id`，便于关联。
+- 示例：`logger.info("Alert processed", request_id=req_id, alert_id=alert.id, duration_ms=1234)`
+
+**业务关键路径日志**
+
+- `AlertProcessor.process()`：记录入口（alert_id、severity）、每个阶段耗时（collect/analyze/remediate）、出口（trace_id、success/failure）。
+- `RCAEngine.analyze()`：记录模型名、prompt 长度、响应耗时、token 用量、JSON 解析结果。
+- 采集器 `collect()`：记录查询参数、返回数据量、HTTP 状态码、耗时。
+- 降噪 `AlertNoiseReducer.evaluate()`：记录指纹、动作（process/suppress）、出现次数。
+- 修复 `RemediationRegistry`：记录计划创建、状态变更、审批人、执行结果。
+
+**错误日志规范**
+
+- 所有 `except` 块必须记录：异常类型、异常消息、上下文字段（alert_id、plan_id 等）。
+- 禁止空 `except:` 或 `except Exception: pass`——至少打 WARNING。
+- 异常堆栈使用 `logger.exception()` 或 `logger.error(..., exc_info=True)`。
+- 结构化字段示例：`logger.error("LLM call failed", error=str(e), model=model, alert_id=alert.id, exc_info=True)`
+
+**外部调用诊断日志**
+
+- HTTP 外部调用（Prometheus、阿里云 CMS、JIRA、通知 Webhook）：记录请求 URL、方法、状态码、耗时。
+- LLM 调用：记录模型名、请求 token 数、响应 token 数、耗时、是否超时。
+- 数据库操作：记录操作类型（select/insert/update）、表名、耗时、影响行数。
+- 向量检索：记录查询文本（截断到 100 字符）、top_k、返回结果数。
+
+**敏感信息脱敏**
+
+- API Key、Secret 只记录后 4 位：`sk-...xxxx`。
+- 禁止在日志中打印完整 PromQL 查询中的敏感标签值。
+- 用户输入（告警 description）按原文记录，但日志收集端需配置脱敏规则。
 
 **Langfuse 可观测性**
 
 - 主流程方法加 `@observe(as_type="processor")`（或 `generation` / `span`）。
 - 用 `langfuse_context.update_current_trace()` 写入 `alert_id`、`severity` 等元数据。
 - 每个 `AnalysisResult` 必须包含 `trace_id`，便于 UI 回溯。
+- Langfuse trace 与 structlog 日志通过 `trace_id` / `request_id` 双向关联。
 
 **LLM 调用**
 
@@ -185,6 +242,10 @@ from langops.models import Alert
    - 验证状态码、响应 schema 关键字段、异常类型。
    - 告警创建成功时断言 `alert_id`、`trace_id`、`root_cause` 存在；失败时断言 `error` 字段。
 6. **禁止**：依赖测试执行顺序；使用真实 API Key；在仓库留下临时 `test_*.py` 脚本（应进 `tests/`）。
+7. **HTTP 客户端 Mock 规范**：
+   - 将 session 获取提取为 `_get_session()` 方法（返回 `AsyncMock`），测试中通过 mock `_get_session` 注入 `MagicMock(session)`。
+   - 禁止在业务方法内直接 `aiohttp.ClientSession()`，否则单元测试无法替换。
+   - 模拟网络异常时使用 `aiohttp.ClientConnectionError` 等真实异常类型，而非 `ConnectionError`（避免 catch 遗漏）。
 
 ### 2.4 运行命令
 
@@ -249,7 +310,13 @@ pytest tests/unit/test_agent/test_alert_processor.py::test_process_alert -v
 - 不引入未经批准的新依赖；优先标准库 + 已有栈。
 - 处理外部 JSON 用 `json.loads` 后校验 schema，不信任 LLM 输出结构。
 
-### 3.6 Agent 行为红线
+### 3.7 幂等性与副作用
+
+- 所有产生外部副作用的操作（创建工单、发送通知、执行命令）**必须**是幂等的或在调用前做好去重检查。
+- API 层不做自动重试有副作用的调用；由调用方（客户端/Webhook）决定重试策略。
+- 修复执行等高风险操作始终需要显式确认，不支持自动审批后的自动重试。
+
+### 3.8 Agent 行为红线
 
 - 不执行 `git push --force`、不修改 `git config`、不跳过 hooks（除非用户明确要求）。
 - 不将用户告警原文、凭证写入 AGENTS.md 或随意创建的文档。
@@ -313,6 +380,126 @@ results = await asyncio.gather(
 - 结构化日志包含 `duration_ms` 字段。
 - 性能回退时先查 Langfuse Trace，再查 Prometheus/collector 延迟。
 
+### 4.6a Request ID 与请求链路追踪
+
+- FastAPI 中间件从 `X-Request-ID` header 读取或自动生成 UUID4。
+- `request_id` 存入 `contextvars.ContextVar`，所有 structlog 日志自动携带。
+- 所有下游调用（LLM、采集器、存储、外部 API）的日志必须包含 `request_id`。
+- Langfuse trace 通过 `trace_id` 关联，structlog 日志通过 `request_id` 关联——双向可查。
+- API 响应 header 返回 `X-Request-ID`，便于前端/调用方关联。
+
+### 4.6b 应用级 Prometheus Metrics
+
+- 暴露 `/metrics` 端点（prometheus_client 库），格式兼容 Prometheus scrape。
+- 核心指标（必须实现）：
+
+| 指标名 | 类型 | 标签 | 说明 |
+|--------|------|------|------|
+| `langops_alerts_received_total` | Counter | severity, category | 接收告警总数 |
+| `langops_alerts_processed_total` | Counter | severity, status | 处理完成总数（status=success/failure） |
+| `langops_alert_processing_duration_seconds` | Histogram | — | 告警处理端到端耗时 |
+| `langops_dedup_suppressed_total` | Counter | — | 降噪抑制告警总数 |
+| `langops_llm_calls_total` | Counter | model, status | LLM 调用总数 |
+| `langops_llm_call_duration_seconds` | Histogram | model | LLM 调用耗时 |
+| `langops_llm_tokens_total` | Counter | model, type | Token 用量（type=prompt/completion） |
+| `langops_collector_query_duration_seconds` | Histogram | source | 数据采集器查询耗时 |
+| `langops_remediation_plans_total` | Counter | risk_level | 修复计划创建总数 |
+| `langops_remediation_actions_total` | Counter | action, status | 修复操作总数（action=execute/reject） |
+| `langops_http_requests_total` | Counter | method, path, status_code | HTTP 请求总数 |
+| `langops_http_request_duration_seconds` | Histogram | method, path | HTTP 请求耗时 |
+
+- Metrics 不得包含用户告警原文、API Key 等敏感信息。
+- Metrics 标签值必须为枚举或有限集合，禁止高基数标签（如 alert_id、request_id）。
+
+### 4.6c Health Check 深度检查
+
+- `/health` 端点必须检查所有已配置的下游依赖，返回每个依赖的状态和延迟。
+- 响应格式：
+  ```json
+  {
+    "status": "healthy|degraded|unhealthy",
+    "version": "0.1.0",
+    "checks": {
+      "storage": {"status": "up", "latency_ms": 2},
+      "langfuse": {"status": "up", "latency_ms": 45},
+      "prometheus": {"status": "down", "latency_ms": null, "error": "timeout"}
+    }
+  }
+  ```
+- `status` 判定规则：所有 up → healthy；部分 down → degraded；核心依赖（storage）down → unhealthy。
+- Health check 超时：单个依赖 **3 秒**，整体 **10 秒**。
+- Health check 不得泄露敏感配置（URL 中的密码、Token 等）。
+
+### 4.6d AlertProcessor 流水线阶段日志
+
+- `AlertProcessor.process()` 内部每个阶段必须记录独立的结构化日志：
+  - **collect**：`logger.info("Metrics collected", alert_id=..., sources=..., metrics_count=..., duration_ms=...)`
+  - **analyze**：`logger.info("RCA analysis completed", alert_id=..., trace_id=..., model=..., tokens=..., duration_ms=...)`
+  - **retrieve**：`logger.info("Knowledge retrieved", alert_id=..., results_count=..., duration_ms=...)`
+  - **remediate**：`logger.info("Remediation plan created", alert_id=..., plan_id=..., risk_level=..., duration_ms=...)`
+- 每个阶段的成功/失败必须独立记录，不得只在顶层记录。
+
+### 4.6e 外部调用诊断日志
+
+- 所有外部 HTTP 调用（Prometheus、阿里云 CMS、JIRA、通知 Webhook）必须记录：
+  ```python
+  logger.info("HTTP request completed",
+      component="prometheus_collector",
+      method="GET",
+      status_code=200,
+      duration_ms=234,
+      target="prometheus",
+  )
+  ```
+- LLM 调用必须记录：模型名、请求 token 数、响应 token 数、耗时、是否超时。
+- 数据库操作必须记录：操作类型（select/insert/update）、表名、耗时、影响行数。
+- 向量检索必须记录：查询文本（截断到 100 字符）、top_k、返回结果数。
+
+### 4.6f 审计日志
+
+- 所有产生外部副作用的操作必须记录审计日志（`logger.info`，级别不低于 INFO）：
+  - 修复计划创建、审批、执行、拒绝（含操作人）
+  - JIRA 工单创建
+  - 告警降噪抑制决策
+- 审计日志必须包含：操作类型、操作人、目标资源 ID、操作结果、时间戳。
+- 审计日志不得包含密码、Token 等敏感信息。
+
+### 4.7 数据库连接池
+
+- SQLAlchemy `create_engine` 配置 `pool_size` 和 `max_overflow`：
+  - SQLite：无需连接池（单写者模型），`pool_size=0`。
+  - PostgreSQL：`pool_size=10`，`max_overflow=20`，`pool_timeout=30`。
+- 连接池参数写入 `StorageSettings`，便于测试覆盖。
+- 应用 shutdown 时调用 `engine.dispose()` 释放连接。
+
+### 4.8 熔断器（Circuit Breaker）
+
+- 对外部服务（LLM API、Prometheus、ChromaDB）启用熔断保护。
+- 连续失败 **5 次**后进入 OPEN 状态，拒绝后续请求 **60 秒**。
+- HALF-OPEN 状态下允许 **1 次**探测请求，成功则恢复 CLOSED。
+- 实现方式：`tenacity` 的 `circuit_breaker` 或独立的 `circuitbreaker` 库。
+- 熔断事件记录到 structlog，便于告警。
+
+### 4.9 并发与限流
+
+- 单实例 LLM 并发上限：通过 `asyncio.Semaphore` 控制，默认 **5** 并发。
+- API 层限流：使用 `slowapi` 或自定义中间件，默认 **100 req/s**。
+- 超出限流返回 `429 Too Many Requests`，日志记录拒绝事件。
+- 并发/限流参数写入 `Settings`，便于测试覆盖。
+
+### 4.10 内存保护
+
+- 向量检索结果集：`top_k` 硬上限 **20**，超过截断并打 WARNING。
+- `metric_data` 传入 LLM 前：单字段大小上限 **10KB**，超过做摘要或截断。
+- 大批量操作（如知识库初始化）使用流式处理，避免一次性加载全量数据到内存。
+
+### 4.11 负载测试基线
+
+- 单实例目标 QPS：**50**（含 LLM 调用，P99 < 120s）。
+- 纯 API（无 LLM）目标 QPS：**200**（P99 < 1s）。
+- 压测工具：`locust` 或 `k6`，脚本放 `tests/load/`。
+- CI 不自动执行压测；发版前手动运行一次，结果记录到 Langfuse。
+
 ---
 
 ## 五、Agent 工作流
@@ -369,6 +556,15 @@ git branch -d feat/task3-models
 - [ ] 新增逻辑有对应测试  
 - [ ] `@observe` 与 `trace_id` 已接入（若改动 Agent 流水线）  
 - [ ] 文档未擅自大量新增（除非 Task 要求）  
+
+#### Review 反馈处理规则
+
+收到代码审查反馈后：
+
+1. **先理解，再修改**：确认反馈的技术依据后再执行修改。不盲目执行。
+2. **对不可靠的建议先验证**：如果反馈的建议看上去缺少验证或与代码实际行为不符，**先验证再修改**，不止于「just fix it」。
+3. **有异议时用技术论据回应**：用具体代码推断回应（如「第 42 行做了类型守卫，这里不会出现 None」），不接受压迫式答复。
+4. **修改后回归测试**：修改后重新运行全部相关测试，确认未引入回归。
 
 ### 5.3 本地开发速查
 

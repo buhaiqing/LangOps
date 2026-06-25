@@ -4,12 +4,38 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import AnalysisResult, RemediationSuggestion, RootCause
 from langops.services import AlertNoiseReducer, JiraService, RemediationRegistry
-from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_jira_service, get_remediation_registry
+from langops.storage.models import Base
+from langops.storage.sql import SqlDedupRepository, SqlRemediationRepository
+from langops.web.dependencies import (
+    get_alert_dedup,
+    get_alert_processor,
+    get_jira_service,
+    get_remediation_registry,
+)
 from langops.web.main import create_app
+
+
+def _dedup_repo():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    return SqlDedupRepository(sessionmaker(bind=engine))
+
+
+def _remediation_repo():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    return SqlRemediationRepository(sessionmaker(bind=engine))
 
 
 @pytest.fixture
@@ -33,12 +59,12 @@ def mock_processor() -> MagicMock:
 
 @pytest.fixture
 def dedup() -> AlertNoiseReducer:
-    return AlertNoiseReducer(window_seconds=900, enabled=True)
+    return AlertNoiseReducer(repo=_dedup_repo(), window_seconds=900, enabled=True)
 
 
 @pytest.fixture
 def remediation_registry() -> RemediationRegistry:
-    return RemediationRegistry()
+    return RemediationRegistry(repo=_remediation_repo())
 
 
 @pytest.fixture

@@ -32,7 +32,9 @@ def vector_store(mock_collection: MagicMock) -> VectorStore:
 
 
 @pytest.mark.asyncio
-async def test_add_case_returns_id_and_calls_chroma(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_add_case_returns_id_and_calls_chroma(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     case_id = await vector_store.add_case(
         title="CPU 过高",
         description="Pod CPU 超限",
@@ -66,7 +68,9 @@ async def test_add_case_generates_deterministic_id(vector_store: VectorStore) ->
 
 
 @pytest.mark.asyncio
-async def test_add_case_raises_vector_store_error(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_add_case_raises_vector_store_error(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     mock_collection.add.side_effect = RuntimeError("chroma down")
 
     with pytest.raises(VectorStoreError, match="Failed to add case"):
@@ -81,7 +85,9 @@ async def test_add_case_raises_vector_store_error(vector_store: VectorStore, moc
 
 
 @pytest.mark.asyncio
-async def test_search_returns_similarity_scores(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_search_returns_similarity_scores(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     mock_collection.query.return_value = {
         "ids": [["case-1"]],
         "documents": [["故障: CPU"]],
@@ -98,7 +104,9 @@ async def test_search_returns_similarity_scores(vector_store: VectorStore, mock_
 
 
 @pytest.mark.asyncio
-async def test_search_applies_category_filter(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_search_applies_category_filter(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     mock_collection.query.return_value = {
         "ids": [[]],
         "documents": [[]],
@@ -115,7 +123,9 @@ async def test_search_applies_category_filter(vector_store: VectorStore, mock_co
 
 
 @pytest.mark.asyncio
-async def test_get_case_returns_metadata(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_get_case_returns_metadata(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     mock_collection.get.return_value = {
         "ids": ["case-1"],
         "documents": ["doc"],
@@ -130,7 +140,9 @@ async def test_get_case_returns_metadata(vector_store: VectorStore, mock_collect
 
 
 @pytest.mark.asyncio
-async def test_get_case_returns_none_when_missing(vector_store: VectorStore, mock_collection: MagicMock) -> None:
+async def test_get_case_returns_none_when_missing(
+    vector_store: VectorStore, mock_collection: MagicMock
+) -> None:
     mock_collection.get.return_value = {"ids": [], "documents": [], "metadatas": []}
 
     assert await vector_store.get_case("missing") is None

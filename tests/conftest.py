@@ -1,29 +1,38 @@
 """pytest configuration and fixtures."""
 
 import os
-from collections.abc import Generator
-from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-from fastapi.testclient import TestClient
-
-from langops.agent.alert_processor import AlertProcessor
-from langops.models import AnalysisResult, RemediationSuggestion, RootCause
-from langops.services import AlertNoiseReducer, RemediationRegistry
-from langops.web.dependencies import get_alert_dedup, get_alert_processor, get_remediation_registry
-from langops.web.main import app
-
-# Required before langops.core imports (Settings validates nested secrets at load time).
+# ── MUST be set BEFORE any langops imports ──────────────────────────
+# langops.core.config is evaluated at module scope: `settings = get_settings()`
+# which validates LLMSettings.api_key (required). Without these env vars,
+# every test collection that touches langops fails with ValidationError.
 os.environ.setdefault("LLM_API_KEY", "sk-test")
+os.environ.setdefault("LLM_MODEL", "gpt-4")
 os.environ.setdefault("LANGFUSE_PUBLIC_KEY", "pk-test")
 os.environ.setdefault("LANGFUSE_SECRET_KEY", "sk-lf-test")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("LOG_LEVEL", "DEBUG")
 
+from collections.abc import Generator  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from langops.agent.alert_processor import AlertProcessor  # noqa: E402
+from langops.models import AnalysisResult, RemediationSuggestion, RootCause  # noqa: E402
+from langops.services import AlertNoiseReducer, RemediationRegistry  # noqa: E402
+from langops.storage.sql import SqlDedupRepository, SqlRemediationRepository  # noqa: E402
+from langops.web.dependencies import (  # noqa: E402
+    get_alert_dedup,
+    get_alert_processor,
+    get_remediation_registry,
+)
+from langops.web.main import app  # noqa: E402
+
 
 @pytest.fixture
 def mock_processor() -> MagicMock:
-    """Mock AlertProcessor for API tests without external services."""
     processor = MagicMock(spec=AlertProcessor)
     processor.process = AsyncMock(
         return_value=AnalysisResult(
@@ -43,9 +52,25 @@ def mock_processor() -> MagicMock:
 
 @pytest.fixture
 def client(mock_processor: MagicMock) -> Generator[TestClient, None, None]:
-    """Create test client with mocked alert processor."""
-    dedup = AlertNoiseReducer(window_seconds=900, enabled=True)
-    remediation_registry = RemediationRegistry()
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from langops.storage.models import Base
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    sf = sessionmaker(bind=engine)
+
+    dedup_repo = SqlDedupRepository(sf)
+    remediation_repo = SqlRemediationRepository(sf)
+    dedup = AlertNoiseReducer(repo=dedup_repo, window_seconds=900, enabled=True)
+    remediation_registry = RemediationRegistry(repo=remediation_repo)
+
     app.dependency_overrides[get_alert_processor] = lambda: mock_processor
     app.dependency_overrides[get_alert_dedup] = lambda: dedup
     app.dependency_overrides[get_remediation_registry] = lambda: remediation_registry

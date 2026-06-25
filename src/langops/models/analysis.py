@@ -70,7 +70,9 @@ class AnalysisResult(BaseModel):
                 "suggestion": {
                     "summary": "增加 Pod CPU limit 或扩容",
                     "steps": ["检查当前资源配置", "修改 deployment CPU limit"],
-                    "commands": ["kubectl set resources deployment/order-service --limits=cpu=1000m"],
+                    "commands": [
+                        "kubectl set resources deployment/order-service --limits=cpu=1000m"
+                    ],
                 },
             }
         }

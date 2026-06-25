@@ -15,17 +15,14 @@ from langops.models.analysis import (
     RootCause,
     SimilarCase,
 )
-from langops.models.query import NLQueryRequest, NLQueryResponse, NLQueryResult
-
+from langops.models.dedup import DedupInfo
 from langops.models.prediction import (
     ImpactPrediction,
     MetricForecast,
     PredictRequest,
     PredictResponse,
 )
-
-from langops.models.dedup import DedupInfo
-
+from langops.models.query import NLQueryRequest, NLQueryResponse, NLQueryResult
 from langops.models.remediation import (
     RemediationExecuteRequest,
     RemediationExecuteResponse,

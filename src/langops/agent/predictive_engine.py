@@ -103,7 +103,9 @@ class PredictiveEngine:
                 forecasts.append(forecast)
 
         overall = self._aggregate_risk(forecasts)
-        recommendation = self._rule_recommendation(overall, forecasts, resource_label, horizon_hours)
+        recommendation = self._rule_recommendation(
+            overall, forecasts, resource_label, horizon_hours
+        )
 
         longest = self._longest_series(series_map)
         confidence = 0.85 if len(longest) >= 5 else 0.55
@@ -242,7 +244,9 @@ class PredictiveEngine:
         if not forecasts:
             return f"未获取到足够时序数据，建议检查 {target} 的监控采集配置。"
 
-        rising = [f for f in forecasts if f.trend == "rising" and f.risk_level in ("high", "critical")]
+        rising = [
+            f for f in forecasts if f.trend == "rising" and f.risk_level in ("high", "critical")
+        ]
         if overall_risk == "critical":
             return f"{target} 存在资源耗尽风险，建议立即扩容或限流，并检查近期变更。"
         if rising:

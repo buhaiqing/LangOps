@@ -209,7 +209,9 @@ async def test_process_raises_analysis_error_when_rca_fails(processor: AlertProc
 
 
 @pytest.mark.asyncio
-async def test_retrieve_similar_cases_returns_empty_on_search_failure(processor: AlertProcessor) -> None:
+async def test_retrieve_similar_cases_returns_empty_on_search_failure(
+    processor: AlertProcessor,
+) -> None:
     processor.vector_store.search = AsyncMock(side_effect=RuntimeError("chroma down"))
 
     cases = await processor._retrieve_similar_cases(_alert())

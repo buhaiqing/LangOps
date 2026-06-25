@@ -1,6 +1,9 @@
 """Remediation executor tests."""
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from langops.models import (
     AnalysisResult,
@@ -16,6 +19,16 @@ from langops.services.remediation_executor import (
     assess_command_risk,
     is_allowed_command,
 )
+from langops.storage.models import Base
+from langops.storage.sql import SqlRemediationRepository
+
+
+def _repo():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(bind=engine)
+    return SqlRemediationRepository(sessionmaker(bind=engine))
 
 
 def test_is_allowed_command_accepts_kubectl_scale() -> None:
@@ -31,8 +44,9 @@ def test_assess_command_risk_low_for_allowlisted_commands() -> None:
     assert assess_command_risk(cmds) == "low"
 
 
-def test_registry_creates_plan_from_analysis() -> None:
-    registry = RemediationRegistry()
+@pytest.mark.asyncio
+async def test_registry_creates_plan_from_analysis() -> None:
+    registry = RemediationRegistry(repo=_repo())
     result = AnalysisResult(
         alert_id="alert-1",
         trace_id="trace-1",
@@ -44,7 +58,7 @@ def test_registry_creates_plan_from_analysis() -> None:
         processing_time_seconds=1.0,
     )
 
-    plan = registry.create_from_analysis(result)
+    plan = await registry.create_from_analysis(result)
     assert plan.plan_id.startswith("plan-")
     assert plan.risk_level == "low"
     assert plan.status == RemediationStatus.PENDING_APPROVAL

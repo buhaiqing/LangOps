@@ -4,11 +4,11 @@ from functools import lru_cache
 
 from langfuse import Langfuse
 
+from langops.agent import AlertProcessor, RCAEngine
 from langops.agent.nl_query_engine import NLQueryEngine
 from langops.agent.predictive_engine import PredictiveEngine
-from langops.agent import AlertProcessor, RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
-from langops.core import settings
+from langops.core import get_logger, settings
 from langops.knowledge import VectorStore
 from langops.services import (
     AlertNoiseReducer,
@@ -17,11 +17,13 @@ from langops.services import (
     RemediationExecutor,
     RemediationRegistry,
 )
+from langops.storage import get_storage
+
+logger = get_logger(__name__)
 
 
 @lru_cache
 def get_langfuse() -> Langfuse:
-    """Get Langfuse client (cached)."""
     return Langfuse(
         public_key=settings.langfuse.public_key,
         secret_key=settings.langfuse.secret_key,
@@ -32,7 +34,6 @@ def get_langfuse() -> Langfuse:
 
 @lru_cache
 def get_vector_store() -> VectorStore:
-    """Get vector store (cached)."""
     return VectorStore(
         collection_name=settings.vector_store.collection_name,
         host=settings.vector_store.host,
@@ -42,23 +43,16 @@ def get_vector_store() -> VectorStore:
 
 
 def get_prometheus_collector() -> PrometheusCollector | None:
-    """Get Prometheus collector if configured."""
     if not settings.prometheus.url:
         return None
-
     return PrometheusCollector(
-        {
-            "url": settings.prometheus.url,
-            "timeout": settings.prometheus.timeout,
-        }
+        {"url": settings.prometheus.url, "timeout": settings.prometheus.timeout}
     )
 
 
 def get_aliyun_collector() -> AliyunCmsCollector | None:
-    """Get Aliyun CMS collector if credentials are configured."""
     if not settings.aliyun.access_key_id or not settings.aliyun.access_key_secret:
         return None
-
     return AliyunCmsCollector(
         {
             "access_key_id": settings.aliyun.access_key_id,
@@ -71,7 +65,6 @@ def get_aliyun_collector() -> AliyunCmsCollector | None:
 
 @lru_cache
 def get_rca_engine() -> RCAEngine:
-    """Get RCA engine (cached)."""
     return RCAEngine(
         api_key=settings.llm.api_key,
         model=settings.llm.model,
@@ -79,74 +72,54 @@ def get_rca_engine() -> RCAEngine:
     )
 
 
-_alert_dedup_singleton: AlertNoiseReducer | None = None
+async def get_alert_dedup() -> AlertNoiseReducer:
+    storage = await get_storage()
+    return AlertNoiseReducer(
+        repo=storage.dedup,
+        window_seconds=settings.alert_dedup.window_seconds,
+        enabled=settings.alert_dedup.enabled,
+    )
 
 
-def get_alert_dedup() -> AlertNoiseReducer:
-    """Get shared alert noise reducer (in-memory per process)."""
-    global _alert_dedup_singleton
-    if _alert_dedup_singleton is None:
-        _alert_dedup_singleton = AlertNoiseReducer(
-            window_seconds=settings.alert_dedup.window_seconds,
-            enabled=settings.alert_dedup.enabled,
-        )
-    return _alert_dedup_singleton
-
-
-_remediation_registry_singleton: RemediationRegistry | None = None
-_remediation_executor_singleton: RemediationExecutor | None = None
-
-
-def get_remediation_registry() -> RemediationRegistry:
-    """Get shared remediation plan registry."""
-    global _remediation_registry_singleton
-    if _remediation_registry_singleton is None:
-        _remediation_registry_singleton = RemediationRegistry()
-    return _remediation_registry_singleton
+async def get_remediation_registry() -> RemediationRegistry:
+    storage = await get_storage()
+    return RemediationRegistry(repo=storage.remediations)
 
 
 def get_remediation_executor() -> RemediationExecutor:
-    """Get remediation command executor."""
-    global _remediation_executor_singleton
-    if _remediation_executor_singleton is None:
-        _remediation_executor_singleton = RemediationExecutor(
-            execution_enabled=settings.remediation.execution_enabled,
-        )
-    return _remediation_executor_singleton
-
-
-_jira_service_singleton: JiraService | None = None
+    return RemediationExecutor(execution_enabled=settings.remediation.execution_enabled)
 
 
 def get_jira_service() -> JiraService:
-    """Get shared JIRA integration service (singleton)."""
-    global _jira_service_singleton
-    if _jira_service_singleton is None:
-        jira_settings = settings.jira
-        _jira_service_singleton = JiraService(
-            url=jira_settings.url,
-            username=jira_settings.username,
-            api_token=jira_settings.api_token,
-            project=jira_settings.project,
-            enabled=jira_settings.enabled,
-            timeout=jira_settings.timeout,
-        )
-    return _jira_service_singleton
+    return JiraService(
+        url=settings.jira.url,
+        username=settings.jira.username,
+        api_token=settings.jira.api_token,
+        project=settings.jira.project,
+        enabled=settings.jira.enabled,
+        timeout=settings.jira.timeout,
+    )
 
 
+@lru_cache
 def get_notification_service() -> NotificationService | None:
-    """Get notification service if any webhook is configured."""
     if not settings.feishu.webhook and not settings.dingtalk.webhook:
         return None
-
     return NotificationService(
         feishu_webhook=settings.feishu.webhook,
         dingtalk_webhook=settings.dingtalk.webhook,
     )
 
 
+async def close_notification_service() -> None:
+    """Close the cached notification service session (best-effort)."""
+    svc = get_notification_service.cache_info().hits  # noqa: only if cached
+    svc = get_notification_service()  # returns cached singleton or None
+    if svc is not None:
+        await svc.close()
+
+
 def get_predictive_engine() -> PredictiveEngine:
-    """Get predictive operations engine."""
     return PredictiveEngine(
         api_key=settings.llm.api_key,
         model=settings.llm.model,
@@ -154,7 +127,6 @@ def get_predictive_engine() -> PredictiveEngine:
 
 
 def get_nl_query_engine() -> NLQueryEngine:
-    """Get natural language query engine."""
     return NLQueryEngine(
         api_key=settings.llm.api_key,
         model=settings.llm.model,
@@ -164,7 +136,6 @@ def get_nl_query_engine() -> NLQueryEngine:
 
 
 def get_alert_processor() -> AlertProcessor:
-    """Get alert processor with all dependencies."""
     return AlertProcessor(
         langfuse=get_langfuse(),
         rca_engine=get_rca_engine(),
@@ -174,3 +145,12 @@ def get_alert_processor() -> AlertProcessor:
         notification_service=get_notification_service(),
         predictive_engine=get_predictive_engine(),
     )
+
+
+async def persist_alert_and_result(alert, result) -> None:
+    try:
+        storage = await get_storage()
+        await storage.alerts.save(alert)
+        await storage.analyses.save(result)
+    except Exception as e:
+        logger.warning("Failed to persist alert", error=str(e), alert_id=alert.id)
