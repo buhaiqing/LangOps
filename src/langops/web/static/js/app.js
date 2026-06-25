@@ -127,9 +127,43 @@ function initQueryForm() {
   });
 }
 
+function initPredictForm() {
+  const form = $("#predict-form");
+  const result = $("#predict-result");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    setResult(result, "预测中…");
+
+    try {
+      const data = new FormData(form);
+      const payload = {
+        resource_type: "kubernetes",
+        system: data.get("system"),
+        namespace: data.get("namespace"),
+        pod_name: data.get("pod_name"),
+        horizon_hours: Number(data.get("horizon_hours") || 24),
+      };
+      const body = await fetchJson("/api/v1/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setResult(result, body, !body.success);
+    } catch (err) {
+      setResult(result, err.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initAlertForm();
   initQueryForm();
+  initPredictForm();
   refreshHealth();
 });
