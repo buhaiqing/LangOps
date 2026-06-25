@@ -40,8 +40,8 @@ LangOps 是一个开源的 AI 智能化运维平台，专注于：
 | `knowledge` | ChromaDB VectorStore | ✅ |
 | `web` | FastAPI 应用与告警 API | ✅ |
 | `server` | 统一启动入口 `server.py` | ✅ Task 9 |
-| `integration` | 端到端集成测试 | 🔜 Task 10 |
-| `scripts` | 知识库初始化脚本 | 🔜 Task 11 |
+| `integration` | 端到端集成测试 | ✅ |
+| `scripts` | 知识库初始化脚本 | ✅ |
 
 开发规范见 [AGENTS.md](AGENTS.md)，实现计划见 [docs/superpowers/plans/2026-06-25-langops-mvp-implementation.md](docs/superpowers/plans/2026-06-25-langops-mvp-implementation.md)。
 
@@ -97,7 +97,10 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
 
-# 5. 启动 API 服务
+# 5. 初始化知识库（需 ChromaDB 已启动）
+python scripts/init_knowledge.py
+
+# 6. 启动 API 服务
 python -m langops.server
 ```
 
@@ -185,7 +188,11 @@ LangOps/
 │   └── .env.example            # 环境变量模板（LLM_ / LANGFUSE_ 前缀）
 ├── docker-compose.yml          # Langfuse、ChromaDB、Redis、Postgres
 ├── docs/
-│   └── architecture/           # 系统设计文档
+│   ├── architecture/           # 系统设计文档
+│   └── examples/
+│       └── sample-alert.json   # API 请求示例
+├── scripts/
+│   └── init_knowledge.py       # 知识库初始化
 ├── src/langops/                # Python 包
 │   ├── core/                   # 配置、日志、异常
 │   ├── models/                 # Alert、AnalysisResult 等
@@ -198,7 +205,7 @@ LangOps/
 │       └── api/alerts.py
 ├── tests/
 │   ├── unit/                   # 单元测试
-│   └── integration/            # 集成测试（规划中）
+│   └── integration/            # 集成测试
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -301,8 +308,8 @@ pytest tests/ -q
 - [x] AlertProcessor + Langfuse 追踪
 - [x] FastAPI 告警 API
 - [x] 服务启动入口（`server.py`）
-- [ ] 端到端集成测试
-- [ ] 知识库初始化脚本
+- [x] 端到端集成测试
+- [x] 知识库初始化脚本
 
 ### Phase 2: 增强
 
