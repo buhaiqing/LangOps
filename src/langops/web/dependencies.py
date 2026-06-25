@@ -10,7 +10,7 @@ from langops.agent import AlertProcessor, RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import settings
 from langops.knowledge import VectorStore
-from langops.services import NotificationService
+from langops.services import AlertNoiseReducer, NotificationService
 
 
 @lru_cache
@@ -71,6 +71,20 @@ def get_rca_engine() -> RCAEngine:
         model=settings.llm.model,
         temperature=settings.llm.temperature,
     )
+
+
+_alert_dedup_singleton: AlertNoiseReducer | None = None
+
+
+def get_alert_dedup() -> AlertNoiseReducer:
+    """Get shared alert noise reducer (in-memory per process)."""
+    global _alert_dedup_singleton
+    if _alert_dedup_singleton is None:
+        _alert_dedup_singleton = AlertNoiseReducer(
+            window_seconds=settings.alert_dedup.window_seconds,
+            enabled=settings.alert_dedup.enabled,
+        )
+    return _alert_dedup_singleton
 
 
 def get_notification_service() -> NotificationService | None:

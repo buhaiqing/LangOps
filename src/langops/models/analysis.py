@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from langops.models.dedup import DedupInfo
+
 
 class RootCause(BaseModel):
     """Root cause analysis result."""
@@ -81,3 +83,4 @@ class AnalysisResponse(BaseModel):
     success: bool = Field(..., description="Whether analysis was successful")
     data: AnalysisResult | None = Field(default=None, description="Analysis result")
     error: str | None = Field(default=None, description="Error message if failed")
+    dedup: DedupInfo | None = Field(default=None, description="Noise reduction metadata")

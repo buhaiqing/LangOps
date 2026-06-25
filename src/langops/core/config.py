@@ -87,6 +87,15 @@ class DingtalkSettings(BaseSettings):
     webhook: str = Field(default="", description="DingTalk bot webhook URL")
 
 
+class AlertDedupSettings(BaseSettings):
+    """Alert noise reduction configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="ALERT_DEDUP_")
+
+    enabled: bool = Field(default=True, description="Enable alert deduplication")
+    window_seconds: int = Field(default=900, ge=60, le=86400, description="Dedup window in seconds")
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -116,6 +125,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
+    alert_dedup: AlertDedupSettings = Field(default_factory=AlertDedupSettings)
 
 
 @lru_cache

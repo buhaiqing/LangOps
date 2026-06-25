@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, status
 
 from langops.agent import AlertProcessor
-from langops.models import Alert, AlertCreate, AnalysisResponse
-from langops.web.dependencies import get_alert_processor
+from langops.models import Alert, AlertCreate, AnalysisResponse, DedupInfo
+from langops.services import AlertNoiseReducer
+from langops.web.dependencies import get_alert_dedup, get_alert_processor
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 async def create_alert(
     alert_create: AlertCreate,
     processor: AlertProcessor = Depends(get_alert_processor),
+    dedup: AlertNoiseReducer = Depends(get_alert_dedup),
 ) -> AnalysisResponse:
     """Process a new alert through the AI analysis pipeline."""
     try:
@@ -38,11 +40,25 @@ async def create_alert(
             context=alert_create.context,
         )
 
+        decision = dedup.evaluate(alert)
+        if decision.action == "suppress":
+            return AnalysisResponse(success=True, data=None, error=None, dedup=decision)
+
         result = await processor.process(alert)
-        return AnalysisResponse(success=True, data=result, error=None)
+        return AnalysisResponse(success=True, data=result, error=None, dedup=decision)
 
     except Exception as exc:
-        return AnalysisResponse(success=False, data=None, error=str(exc))
+        return AnalysisResponse(success=False, data=None, error=str(exc), dedup=None)
+
+
+@router.get(
+    "/dedup/stats",
+    summary="Dedup statistics",
+    description="Return active alert group count for noise reduction.",
+)
+async def dedup_stats(dedup: AlertNoiseReducer = Depends(get_alert_dedup)) -> dict[str, int]:
+    """Return deduplication statistics."""
+    return dedup.stats()
 
 
 @router.get(

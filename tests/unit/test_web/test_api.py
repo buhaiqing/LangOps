@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import AnalysisResult, RemediationSuggestion, RootCause
-from langops.web.dependencies import get_alert_processor
+from langops.services import AlertNoiseReducer
+from langops.web.dependencies import get_alert_dedup, get_alert_processor
 from langops.web.main import create_app
 
 
@@ -27,9 +28,15 @@ def mock_processor() -> MagicMock:
 
 
 @pytest.fixture
-def client(mock_processor: MagicMock) -> TestClient:
+def dedup() -> AlertNoiseReducer:
+    return AlertNoiseReducer(window_seconds=900, enabled=True)
+
+
+@pytest.fixture
+def client(mock_processor: MagicMock, dedup: AlertNoiseReducer) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_alert_processor] = lambda: mock_processor
+    app.dependency_overrides[get_alert_dedup] = lambda: dedup
     return TestClient(app)
 
 
@@ -75,6 +82,31 @@ def test_create_alert_success(client: TestClient, mock_processor: MagicMock) -> 
     assert body["success"] is True
     assert body["data"]["trace_id"] == "trace-123"
     assert body["data"]["root_cause"]["category"] == "资源不足"
+    assert body["dedup"]["action"] == "process"
+    mock_processor.process.assert_awaited_once()
+
+
+def test_create_alert_suppresses_duplicate(client: TestClient, mock_processor: MagicMock) -> None:
+    payload = {
+        "title": "CPU使用率过高",
+        "description": "order-service CPU > 90%",
+        "severity": "critical",
+        "category": "resource",
+        "source": {
+            "type": "kubernetes",
+            "system": "prod-cluster",
+            "namespace": "production",
+            "pod_name": "order-pod",
+        },
+    }
+
+    first = client.post("/api/v1/alerts", json=payload)
+    second = client.post("/api/v1/alerts", json=payload)
+
+    assert first.json()["dedup"]["action"] == "process"
+    assert second.json()["success"] is True
+    assert second.json()["data"] is None
+    assert second.json()["dedup"]["action"] == "suppress"
     mock_processor.process.assert_awaited_once()
 
 
