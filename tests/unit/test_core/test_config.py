@@ -44,3 +44,17 @@ def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_llm_settings_validates_temperature_bounds() -> None:
     with pytest.raises(ValueError):
         LLMSettings(api_key="sk-test", temperature=3.0)
+
+
+def test_webhook_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    from langops.core.config import Settings
+
+    s = Settings()
+    assert s.webhook.max_payload_bytes == 1_048_576
+    assert s.webhook.max_alerts_per_batch == 100
+    assert s.webhook.audit_log_path == "logs/langops-audit.log"
+    assert s.webhook.audit_log_retention_days == 7
+    assert s.webhook.coalesce_max_buffered_alerts == 500

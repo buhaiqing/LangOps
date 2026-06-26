@@ -154,6 +154,18 @@ class StorageSettings(BaseSettings):
     echo: bool = Field(default=False, description="Log SQL statements")
 
 
+class WebhookSettings(BaseSettings):
+    """Webhook receiver configuration."""
+
+    model_config = _env_config("WEBHOOK_")
+
+    max_payload_bytes: int = Field(default=1_048_576, ge=1024, description="Max webhook body size")
+    max_alerts_per_batch: int = Field(default=100, ge=1, le=1000, description="Max alerts per callback")
+    audit_log_path: str = Field(default="logs/langops-audit.log", description="Audit log file path")
+    audit_log_retention_days: int = Field(default=7, ge=1, le=90, description="Audit log retention days")
+    coalesce_max_buffered_alerts: int = Field(default=500, ge=10, le=10_000, description="Coalesce buffer cap")
+
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -188,6 +200,7 @@ class Settings(BaseSettings):
     remediation: RemediationSettings = Field(default_factory=RemediationSettings)
     jira: JiraSettings = Field(default_factory=JiraSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
+    webhook: WebhookSettings = Field(default_factory=WebhookSettings)
 
     @model_validator(mode="before")
     @classmethod
@@ -219,6 +232,7 @@ class Settings(BaseSettings):
             RemediationSettings,
             JiraSettings,
             StorageSettings,
+            WebhookSettings,
         ]
 
         for factory in nested_factories:
@@ -270,6 +284,7 @@ def _factory_to_field_name(factory: type[BaseSettings]) -> str:
         RemediationSettings: "remediation",
         JiraSettings: "jira",
         StorageSettings: "storage",
+        WebhookSettings: "webhook",
     }
     return mapping[factory]
 
