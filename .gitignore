@@ -224,6 +224,9 @@ wheelhouse/
 typings/
 .uv/
 
+# Test reports (temporary)
+reports/
+
 .omc/
 .omo/
 

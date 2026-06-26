@@ -1502,6 +1502,9 @@ langops:
         - type: "dingtalk"
           webhook: "${DINGTALK_WEBHOOK}"
           enabled: false
+        - type: "wechat_work"
+          webhook: "${WECHAT_WORK_WEBHOOK}"
+          enabled: false
   
   # 知识库配置
   knowledge:

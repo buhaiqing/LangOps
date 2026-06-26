@@ -69,6 +69,7 @@ def get_rca_engine() -> RCAEngine:
         api_key=settings.llm.api_key,
         model=settings.llm.model,
         temperature=settings.llm.temperature,
+        base_url=settings.llm.base_url,
     )
 
 
@@ -103,11 +104,12 @@ def get_jira_service() -> JiraService:
 
 @lru_cache
 def get_notification_service() -> NotificationService | None:
-    if not settings.feishu.webhook and not settings.dingtalk.webhook:
+    if not settings.feishu.webhook and not settings.dingtalk.webhook and not settings.wechat_work.webhook:
         return None
     return NotificationService(
         feishu_webhook=settings.feishu.webhook,
         dingtalk_webhook=settings.dingtalk.webhook,
+        wechat_work_webhook=settings.wechat_work.webhook,
     )
 
 
@@ -123,6 +125,7 @@ def get_predictive_engine() -> PredictiveEngine:
     return PredictiveEngine(
         api_key=settings.llm.api_key,
         model=settings.llm.model,
+        base_url=settings.llm.base_url,
     )
 
 
@@ -132,6 +135,7 @@ def get_nl_query_engine() -> NLQueryEngine:
         model=settings.llm.model,
         temperature=settings.llm.temperature,
         prometheus_collector=get_prometheus_collector(),
+        base_url=settings.llm.base_url,
     )
 
 

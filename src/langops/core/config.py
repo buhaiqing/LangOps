@@ -12,6 +12,7 @@ class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_")
 
     provider: str = Field(default="openai", description="LLM provider")
+    base_url: str | None = Field(default=None, description="Custom API base URL (e.g. for Azure, proxy)")
     model: str = Field(default="gpt-4", description="Model name")
     api_key: str = Field(..., description="API key")
     temperature: float = Field(default=0.2, ge=0, le=2)
@@ -85,6 +86,14 @@ class DingtalkSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DINGTALK_")
 
     webhook: str = Field(default="", description="DingTalk bot webhook URL")
+
+
+class WechatWorkSettings(BaseSettings):
+    """WeChat Work (企业微信) notification configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="WECHAT_WORK_")
+
+    webhook: str = Field(default="", description="WeChat Work bot webhook URL")
 
 
 class AlertDedupSettings(BaseSettings):
@@ -161,6 +170,7 @@ class Settings(BaseSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
+    wechat_work: WechatWorkSettings = Field(default_factory=WechatWorkSettings)
     alert_dedup: AlertDedupSettings = Field(default_factory=AlertDedupSettings)
     remediation: RemediationSettings = Field(default_factory=RemediationSettings)
     jira: JiraSettings = Field(default_factory=JiraSettings)

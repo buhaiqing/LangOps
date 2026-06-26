@@ -139,7 +139,7 @@ deployment/                     # 尚未在仓库中落地，见 system-design.m
 
 | 文件 | 说明 |
 |-----|------|
-| `config/.env.example` | 环境变量模板 |
+| `.env.example` | 环境变量模板 |
 | `.env` | 本地密钥（不提交） |
 | `docker-compose.yml` | Langfuse、ChromaDB、Redis 等 |
 | `pyproject.toml` | 依赖与工具配置 |

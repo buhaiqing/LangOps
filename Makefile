@@ -1,4 +1,4 @@
-.PHONY: help up up-light down install dev server test lint format init-db init-knowledge clean status
+.PHONY: help up up-light down stop install dev server test test-unit test-integration test-system test-cov lint format init-db init-knowledge clean status
 
 PORT := 8000
 HOST := 0.0.0.0
@@ -22,8 +22,16 @@ up-light: ## 轻量启动 (仅 ChromaDB)
 	@echo "  ChromaDB:   http://localhost:8001"
 	@echo "  提示: 使用 SQLite 作为存储层，无需 Postgres/Redis"
 
-down: ## 停止全部服务
+down: ## 停止全部 Docker 服务
 	docker compose down
+
+stop: ## 一键关闭全部服务 (Docker + dev server)
+	@echo "Stopping dev server..."
+	@pkill -f "uvicorn langops.server" 2>/dev/null || true
+	@pkill -f "uv run langops.server" 2>/dev/null || true
+	@echo "Stopping Docker services..."
+	@docker compose down 2>/dev/null || true
+	@echo "\033[32m✅ 全部服务已停止\033[0m"
 
 # ─── Python Environment ─────────────────────────────────────────────
 
@@ -58,6 +66,12 @@ test-unit: ## 运行单元测试
 
 test-integration: ## 运行集成测试
 	uv run pytest tests/integration/ -v
+
+test-system: ## 运行系统集成测试 (输入校验 + 端到端 + 采集器 + 降噪)
+	uv run pytest tests/system/ -v --tb=short
+
+test-system-verbose: ## 运行系统集成测试 (详细输出)
+	uv run pytest tests/system/ -v -s --tb=long
 
 test-cov: ## 运行测试并生成覆盖率报告
 	uv run pytest tests/ -v --cov=langops --cov-report=term-missing

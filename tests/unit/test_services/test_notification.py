@@ -42,15 +42,18 @@ async def test_notify_analysis_sends_to_configured_channels() -> None:
     service = NotificationService(
         feishu_webhook="https://feishu.example/hook",
         dingtalk_webhook="https://dingtalk.example/hook",
+        wechat_work_webhook="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
     )
     service.send_feishu = AsyncMock(return_value=True)
     service.send_dingtalk = AsyncMock(return_value=True)
+    service.send_wechat_work = AsyncMock(return_value=True)
 
     outcomes = await service.notify_analysis(_alert(), _analysis_result())
 
-    assert outcomes == {"feishu": True, "dingtalk": True}
+    assert outcomes == {"feishu": True, "dingtalk": True, "wechat_work": True}
     service.send_feishu.assert_awaited_once()
     service.send_dingtalk.assert_awaited_once()
+    service.send_wechat_work.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -94,3 +97,58 @@ async def test_send_dingtalk_returns_false_on_http_error() -> None:
 def test_enabled_false_without_webhooks() -> None:
     service = NotificationService()
     assert service.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_send_wechat_work_posts_markdown_payload() -> None:
+    service = NotificationService(
+        wechat_work_webhook="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+    )
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"errcode": 0})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = MagicMock()
+    mock_session.closed = False
+    mock_session.post.return_value = mock_response
+    service._get_session = AsyncMock(return_value=mock_session)
+
+    ok = await service.send_wechat_work("hello")
+
+    assert ok is True
+    args = mock_session.post.call_args
+    assert args[0][0] == "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+    payload = args[1]["json"]
+    assert payload["msgtype"] == "markdown"
+    assert payload["markdown"]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_send_wechat_work_returns_false_on_empty_webhook() -> None:
+    service = NotificationService()
+    assert await service.send_wechat_work("hello") is False
+
+
+@pytest.mark.asyncio
+async def test_send_wechat_work_returns_false_on_api_error() -> None:
+    service = NotificationService(
+        wechat_work_webhook="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test"
+    )
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"errcode": 93000, "errmsg": "invalid webhook"})
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = MagicMock()
+    mock_session.post.return_value = mock_response
+    service._get_session = AsyncMock(return_value=mock_session)
+
+    assert await service.send_wechat_work("hello") is False
+
+
+def test_enabled_true_with_wechat_work_only() -> None:
+    service = NotificationService(wechat_work_webhook="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test")
+    assert service.enabled is True

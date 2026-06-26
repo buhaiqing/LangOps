@@ -23,10 +23,11 @@ class PredictiveEngine:
         api_key: str | None = None,
         model: str = "gpt-4",
         step_hours: float = 0.25,
+        base_url: str | None = None,
     ) -> None:
         self.model = model
         self.step_hours = step_hours
-        self.client = openai.AsyncOpenAI(api_key=api_key) if api_key else None
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
     async def predict_impact(
         self,

@@ -80,9 +80,9 @@ Phase 2–3 扩展：`services/`（通知、降噪、修复）、`predictive_eng
 ### 环境要求
 
 - Python 3.11+
-- Docker & Docker Compose
+- Docker & Docker Compose（轻量模式可选）
 - OpenAI API Key（或兼容接口）
-- Langfuse、ChromaDB（通过 docker-compose 启动）
+- Langfuse、ChromaDB（通过 docker-compose 启动，或轻量模式仅 ChromaDB）
 
 ### 安装部署
 
@@ -92,26 +92,43 @@ git clone https://github.com/bohaiqing/LangOps.git
 cd LangOps
 
 # 2. 配置环境变量
-cp config/.env.example .env
+cp .env.example .env
 # 必填：LLM_API_KEY、LANGFUSE_PUBLIC_KEY、LANGFUSE_SECRET_KEY
 
-# 3. 启动依赖服务（Langfuse、ChromaDB、Redis、Postgres）
-docker compose up -d
+# 3. 一键安装依赖并初始化数据库
+make setup
 
-# 4. 创建虚拟环境并安装依赖
-python3 -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+# 4. 启动全部依赖服务（Langfuse、ChromaDB、Redis、Postgres）
+make up
 
 # 5. 初始化知识库（需 ChromaDB 已启动）
-python scripts/init_knowledge.py
+make init-knowledge
 
-# 6. 启动 API 服务
-python -m langops.server
-
-# 7. 打开 Web 管理界面
-open http://localhost:8000/ui
+# 6. 启动开发服务器（热重载）
+make dev
 ```
+
+### Makefile 指令速查
+
+| 指令 | 说明 |
+|------|------|
+| `make setup` | 一键安装依赖 + 初始化数据库（首次使用） |
+| `make up` | 启动全部 Docker 服务（Langfuse + Postgres + ChromaDB + Redis） |
+| `make up-light` | 轻量启动（仅 ChromaDB，用 SQLite 存储） |
+| `make dev` | 启动开发服务器（热重载，debug 模式） |
+| `make server` | 启动生产服务器 |
+| `make stop` | 一键关闭全部服务（Docker + dev server） |
+| `make down` | 仅停止 Docker 服务 |
+| `make test` | 运行全部测试 |
+| `make test-system` | 运行系统集成测试（输入校验 + 端到端 + 采集器 + 降噪） |
+| `make test-unit` | 运行单元测试 |
+| `make test-cov` | 运行测试并生成覆盖率报告 |
+| `make lint` | 静态检查（flake8 + mypy） |
+| `make format` | 格式化代码（black + isort） |
+| `make status` | 查看 Docker 服务状态 |
+| `make logs` | 查看 Docker 服务日志 |
+
+运行 `make help` 查看完整指令列表。
 
 ### 环境变量（`.env`）
 
@@ -141,6 +158,7 @@ ALIYUN_CMS_ENDPOINT=metrics.aliyuncs.com
 # 通知（告警分析完成后推送）
 FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
 DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxxxx
+WECHAT_WORK_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxx
 
 # 告警降噪（默认 15 分钟窗口内重复告警跳过 LLM 分析）
 ALERT_DEDUP_ENABLED=true
@@ -151,7 +169,7 @@ REMEDIATION_ENABLED=true
 REMEDIATION_EXECUTION_ENABLED=false
 ```
 
-完整模板见 [config/.env.example](config/.env.example) 与根目录 [.env.example](.env.example)。
+完整模板见 [.env.example](.env.example)。
 
 ### 验证安装
 
@@ -212,7 +230,7 @@ curl -X POST http://localhost:8000/api/v1/alerts \
 
 成功时返回 `AnalysisResponse`：`success`、`data`（含 `trace_id`、`root_cause`、`suggestion`）或 `error`。
 
-配置 `FEISHU_WEBHOOK` / `DINGTALK_WEBHOOK` 后，分析成功会自动推送通知。
+配置 `FEISHU_WEBHOOK` / `DINGTALK_WEBHOOK` / `WECHAT_WORK_WEBHOOK` 后，分析成功会自动推送通知。
 
 告警降噪默认开启：同一资源在 `ALERT_DEDUP_WINDOW_SECONDS`（默认 900 秒）内的重复告警会返回 `dedup.action=suppress`，跳过 LLM 分析。响应中的 `dedup` 字段包含指纹与出现次数。
 
@@ -369,17 +387,62 @@ results = await store.search(query="数据库连接问题", top_k=3)
 ### 本地命令
 
 ```bash
-source venv/bin/activate
-pip install -e ".[dev]"
-
 # 测试
-pytest tests/ -v
+make test              # 全部测试
+make test-system       # 系统集成测试（推荐开发时使用）
+make test-unit         # 单元测试
+make test-cov          # 覆盖率报告
 
-# 代码检查
-black src/ tests/
-isort src/ tests/
-mypy src/langops
+# 代码质量
+make lint              # 静态检查
+make format            # 格式化
 ```
+
+### 极简开发模式（轻量级）
+
+适合日常开发调试，仅需 Docker 运行 ChromaDB，无需 Langfuse / Postgres / Redis：
+
+```bash
+# 1. 首次：安装依赖 + 初始化数据库
+make setup
+
+# 2. 启动轻量依赖（仅 ChromaDB）
+make up-light
+
+# 3. 启动开发服务器
+make dev
+
+# 4. 发送测试告警验证
+curl -X POST http://localhost:8000/api/v1/alerts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "CPU使用率过高",
+    "description": "order-service Pod CPU使用率超过90%",
+    "severity": "critical",
+    "category": "resource",
+    "source": {
+      "type": "kubernetes",
+      "system": "dev-cluster",
+      "namespace": "default",
+      "pod_name": "order-service-test"
+    }
+  }'
+
+# 5. 关闭全部服务
+make stop
+```
+
+**轻量模式与完整模式的区别：**
+
+| | 轻量模式 (`make up-light`) | 完整模式 (`make up`) |
+|---|---|---|
+| ChromaDB | ✅ Docker | ✅ Docker |
+| Langfuse | ❌ 无（trace_id 为 `local-{alert_id}`） | ✅ Docker |
+| Postgres | ❌ 用 SQLite | ✅ Docker |
+| Redis | ❌ 无 | ✅ Docker |
+| LLM 分析 | ✅ 正常工作 | ✅ 正常工作 |
+| 告警降噪 | ✅ 正常工作 | ✅ 正常工作 |
+| 全链路 Trace | ❌ 不可见 | ✅ Langfuse UI 可视化 |
 
 ### Git Worktree 工作流
 

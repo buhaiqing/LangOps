@@ -1,4 +1,4 @@
-"""Notification services for Feishu and DingTalk."""
+"""Notification services for Feishu, DingTalk, and WeChat Work."""
 
 from typing import Any
 
@@ -11,22 +11,24 @@ logger = get_logger(__name__)
 
 
 class NotificationService:
-    """Send analysis notifications to Feishu and DingTalk webhooks."""
+    """Send analysis notifications to Feishu, DingTalk, and WeChat Work webhooks."""
 
     def __init__(
         self,
         feishu_webhook: str = "",
         dingtalk_webhook: str = "",
+        wechat_work_webhook: str = "",
         timeout: int = 10,
     ) -> None:
         self.feishu_webhook = feishu_webhook.strip()
         self.dingtalk_webhook = dingtalk_webhook.strip()
+        self.wechat_work_webhook = wechat_work_webhook.strip()
         self.timeout = timeout
         self._session: aiohttp.ClientSession | None = None
 
     @property
     def enabled(self) -> bool:
-        return bool(self.feishu_webhook or self.dingtalk_webhook)
+        return bool(self.feishu_webhook or self.dingtalk_webhook or self.wechat_work_webhook)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -44,6 +46,8 @@ class NotificationService:
             outcomes["feishu"] = await self.send_feishu(message)
         if self.dingtalk_webhook:
             outcomes["dingtalk"] = await self.send_dingtalk(message)
+        if self.wechat_work_webhook:
+            outcomes["wechat_work"] = await self.send_wechat_work(message)
 
         return outcomes
 
@@ -68,6 +72,19 @@ class NotificationService:
             },
         }
         return await self._post_webhook(self.dingtalk_webhook, payload, channel="dingtalk")
+
+    async def send_wechat_work(self, text: str) -> bool:
+        """Send markdown message to WeChat Work (企业微信) webhook."""
+        if not self.wechat_work_webhook:
+            return False
+
+        payload = {
+            "msgtype": "markdown",
+            "markdown": {
+                "content": text,
+            },
+        }
+        return await self._post_webhook(self.wechat_work_webhook, payload, channel="wechat_work")
 
     async def _post_webhook(self, url: str, payload: dict[str, Any], channel: str) -> bool:
         try:

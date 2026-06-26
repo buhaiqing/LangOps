@@ -122,6 +122,7 @@ ALIYUN_ACCESS_KEY_SECRET=
 # 通知
 FEISHU_WEBHOOK=
 DINGTALK_WEBHOOK=
+WECHAT_WORK_WEBHOOK=
 
 # 告警降噪（默认开启，900s 窗口）
 ALERT_DEDUP_ENABLED=true
@@ -132,7 +133,7 @@ REMEDIATION_ENABLED=true
 REMEDIATION_EXECUTION_ENABLED=false
 ```
 
-完整模板：[config/.env.example](../../config/.env.example)
+完整模板：[.env.example](../../.env.example)
 
 ## 常用命令
 
