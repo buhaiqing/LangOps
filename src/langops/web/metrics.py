@@ -89,3 +89,24 @@ http_request_duration_seconds = Histogram(
     ["method", "path"],
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
 )
+
+# ── Webhook metrics ──────────────────────────────────────────────────
+
+webhook_received_total = Counter(
+    "langops_webhook_received_total",
+    "Total webhook callbacks received",
+    ["webhook_source", "status"],
+)
+
+webhook_duration_seconds = Histogram(
+    "langops_webhook_duration_seconds",
+    "Webhook handler duration",
+    ["webhook_source"],
+    buckets=(0.1, 0.5, 1, 2, 5, 10, 30, 60, 120),
+)
+
+webhook_alerts_received_total = Counter(
+    "langops_webhook_alerts_received_total",
+    "Total alerts received via webhooks",
+    ["webhook_source"],
+)
