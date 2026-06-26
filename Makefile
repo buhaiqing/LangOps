@@ -27,8 +27,8 @@ down: ## 停止全部 Docker 服务
 
 stop: ## 一键关闭全部服务 (Docker + dev server)
 	@echo "Stopping dev server..."
-	@pkill -f "uvicorn langops.server" 2>/dev/null || true
-	@pkill -f "uv run langops.server" 2>/dev/null || true
+	@pkill -f "uvicorn langops.web" 2>/dev/null || true
+	@pkill -f "python -m langops.server" 2>/dev/null || true
 	@echo "Stopping Docker services..."
 	@docker compose down 2>/dev/null || true
 	@echo "\033[32m✅ 全部服务已停止\033[0m"
@@ -42,16 +42,16 @@ install: ## 创建 venv 并安装全部依赖（含 dev）
 # ─── Server ─────────────────────────────────────────────────────────
 
 dev: ## 启动开发服务器 (热重载, debug 模式)
-	DEBUG=true uv run langops.server
+	DEBUG=true uv run python -m langops.server
 
 server: ## 启动生产服务器
-	uv run langops.server
+	uv run python -m langops.server
 
 # ─── Database ───────────────────────────────────────────────────────
 
 init-db: ## 初始化数据库 (创建 SQLite 表结构)
 	@mkdir -p .langops
-	uv run python -c "from langops.storage import SqlStorage; import asyncio; asyncio.run(SqlStorage('sqlite+aiosqlite:///.langops/data.db').initialize()); print('\033[32m✅ 数据库初始化完成\033[0m -> .langops/data.db')"
+	uv run python -c "from langops.storage import SqlStorage; import asyncio; asyncio.run(SqlStorage('sqlite:///.langops/data.db').initialize()); print('\033[32m✅ 数据库初始化完成\033[0m -> .langops/data.db')"
 
 init-knowledge: ## 初始化知识库 (写入故障案例到 ChromaDB)
 	uv run python scripts/init_knowledge.py

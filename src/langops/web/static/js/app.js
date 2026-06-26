@@ -1,5 +1,17 @@
 /** LangOps Web UI — vanilla JS, no build step. ponytail: upgrade path = Vite/React SPA. */
 
+const LABELS = {
+  severity: { critical: "严重", high: "高", medium: "中", low: "低", info: "信息" },
+  category: { resource: "资源", availability: "可用性", performance: "性能", security: "安全" },
+  risk: { low: "低", medium: "中", high: "高" },
+  status: { pending_approval: "待审批", approved: "已批准", rejected: "已拒绝", executed: "已执行" },
+  health: { healthy: "服务正常", degraded: "服务降级", unhealthy: "服务异常" },
+};
+
+function label(group, value) {
+  return LABELS[group]?.[value] || value;
+}
+
 function $(selector) {
   return document.querySelector(selector);
 }
@@ -26,7 +38,7 @@ async function refreshHealth() {
   const badge = $("#health-badge");
   try {
     const data = await fetchJson("/health");
-    badge.textContent = data.status === "healthy" ? "服务正常" : data.status;
+    badge.textContent = label("health", data.status);
     badge.className = "badge badge-ok";
   } catch {
     badge.textContent = "服务异常";
@@ -192,7 +204,7 @@ function renderPlanList(plans) {
       <div class="plan-item-title">${plan.summary}</div>
       <div class="plan-item-meta">
         <span>${plan.plan_id}</span> ·
-        <span class="${riskClass(plan.risk_level)}">${plan.risk_level}</span> ·
+        <span class="${riskClass(plan.risk_level)}">${label("risk", plan.risk_level)}</span> ·
         ${plan.commands.length} 条命令
       </div>`;
     item.addEventListener("click", () => selectPlan(plan.plan_id));

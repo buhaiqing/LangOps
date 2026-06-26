@@ -98,16 +98,84 @@ class Alert(BaseModel):
 
 
 class AlertCreate(BaseModel):
-    """Alert creation request."""
+    """Alert creation request — ``POST /api/v1/alerts``.
 
-    title: str
-    description: str
-    severity: AlertSeverity
-    category: AlertCategory
-    source: AlertSource
-    metric_data: dict[str, Any] = Field(default_factory=dict)
-    log_snippets: list[str] = Field(default_factory=list)
-    context: dict[str, Any] = Field(default_factory=dict)
+    Fields ``title``, ``description``, ``severity``, ``category``, and ``source``
+    are required.  ``metric_data``, ``log_snippets``, and ``context`` are optional
+    enrichment that improves RCA accuracy.
+    """
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Alert title, concise summary of the problem",
+        examples=["CPU使用率过高"],
+    )
+    description: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="Detailed alert description, may include symptoms and scope",
+        examples=["order-service Pod CPU使用率超过90%，持续5分钟"],
+    )
+    severity: AlertSeverity = Field(
+        ...,
+        description="Alert severity level: critical | high | medium | low | info",
+        examples=["critical"],
+    )
+    category: AlertCategory = Field(
+        ...,
+        description="Alert category: resource | availability | performance | security",
+        examples=["resource"],
+    )
+    source: AlertSource = Field(
+        ...,
+        description="Identifies the originating system and resource",
+    )
+    metric_data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw metric key-value pairs for context enrichment",
+        examples=[{"cpu_usage_percent": 95.5, "memory_usage_percent": 78.2}],
+    )
+    log_snippets: list[str] = Field(
+        default_factory=list,
+        description="Relevant log lines to assist root cause analysis",
+        examples=[["2024-01-15 10:30:45 ERROR High CPU usage detected"]],
+    )
+    context: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary additional context (deployment version, node, etc.)",
+        examples=[{"deployment_version": "v2.3.1", "node_name": "node-01"}],
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "title": "CPU使用率过高",
+                "description": "order-service Pod CPU使用率超过90%，持续5分钟",
+                "severity": "critical",
+                "category": "resource",
+                "source": {
+                    "type": "kubernetes",
+                    "system": "prod-cluster",
+                    "namespace": "production",
+                    "pod_name": "order-service-abc123",
+                },
+                "metric_data": {
+                    "cpu_usage_percent": 95.5,
+                    "memory_usage_percent": 78.2,
+                },
+                "log_snippets": [
+                    "2024-01-15 10:30:45 ERROR High CPU usage detected",
+                ],
+                "context": {
+                    "deployment_version": "v2.3.1",
+                    "node_name": "node-01",
+                },
+            }
+        }
+    )
 
 
 class AlertContext(BaseModel):

@@ -2,14 +2,27 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _env_config(
+    prefix: str,
+    env_file: str = ".env",
+    env_file_encoding: str = "utf-8",
+) -> SettingsConfigDict:
+    return SettingsConfigDict(
+        env_prefix=prefix,
+        env_file=env_file,
+        env_file_encoding=env_file_encoding,
+        extra="ignore",
+    )
 
 
 class LLMSettings(BaseSettings):
     """LLM configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="LLM_")
+    model_config = _env_config("LLM_")
 
     provider: str = Field(default="openai", description="LLM provider")
     base_url: str | None = Field(default=None, description="Custom API base URL (e.g. for Azure, proxy)")
@@ -23,7 +36,7 @@ class LLMSettings(BaseSettings):
 class LangfuseSettings(BaseSettings):
     """Langfuse configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="LANGFUSE_")
+    model_config = _env_config("LANGFUSE_")
 
     host: str = Field(default="http://localhost:3000")
     public_key: str = Field(..., description="Public key")
@@ -34,7 +47,7 @@ class LangfuseSettings(BaseSettings):
 class PrometheusSettings(BaseSettings):
     """Prometheus configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="PROMETHEUS_")
+    model_config = _env_config("PROMETHEUS_")
 
     url: str = Field(default="http://localhost:9090")
     timeout: int = Field(default=10)
@@ -44,7 +57,7 @@ class PrometheusSettings(BaseSettings):
 class AliyunSettings(BaseSettings):
     """Alibaba Cloud configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="ALIYUN_")
+    model_config = _env_config("ALIYUN_")
 
     access_key_id: str = Field(default="", description="Access key ID")
     access_key_secret: str = Field(default="", description="Access key secret")
@@ -55,7 +68,7 @@ class AliyunSettings(BaseSettings):
 class VectorStoreSettings(BaseSettings):
     """Vector store configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="VECTOR_")
+    model_config = _env_config("VECTOR_")
 
     type: str = Field(default="chromadb")
     host: str = Field(default="localhost")
@@ -67,7 +80,7 @@ class VectorStoreSettings(BaseSettings):
 class RedisSettings(BaseSettings):
     """Redis configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="REDIS_")
+    model_config = _env_config("REDIS_")
 
     url: str = Field(default="redis://localhost:6379")
 
@@ -75,7 +88,7 @@ class RedisSettings(BaseSettings):
 class FeishuSettings(BaseSettings):
     """Feishu notification configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="FEISHU_")
+    model_config = _env_config("FEISHU_")
 
     webhook: str = Field(default="", description="Feishu bot webhook URL")
 
@@ -83,7 +96,7 @@ class FeishuSettings(BaseSettings):
 class DingtalkSettings(BaseSettings):
     """DingTalk notification configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="DINGTALK_")
+    model_config = _env_config("DINGTALK_")
 
     webhook: str = Field(default="", description="DingTalk bot webhook URL")
 
@@ -91,7 +104,7 @@ class DingtalkSettings(BaseSettings):
 class WechatWorkSettings(BaseSettings):
     """WeChat Work (企业微信) notification configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="WECHAT_WORK_")
+    model_config = _env_config("WECHAT_WORK_")
 
     webhook: str = Field(default="", description="WeChat Work bot webhook URL")
 
@@ -99,7 +112,7 @@ class WechatWorkSettings(BaseSettings):
 class AlertDedupSettings(BaseSettings):
     """Alert noise reduction configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="ALERT_DEDUP_")
+    model_config = _env_config("ALERT_DEDUP_")
 
     enabled: bool = Field(default=True, description="Enable alert deduplication")
     window_seconds: int = Field(default=900, ge=60, le=86400, description="Dedup window in seconds")
@@ -108,7 +121,7 @@ class AlertDedupSettings(BaseSettings):
 class RemediationSettings(BaseSettings):
     """Remediation execution configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="REMEDIATION_")
+    model_config = _env_config("REMEDIATION_")
 
     enabled: bool = Field(default=True, description="Register remediation plans after analysis")
     execution_enabled: bool = Field(default=False, description="Allow real command execution")
@@ -117,7 +130,7 @@ class RemediationSettings(BaseSettings):
 class JiraSettings(BaseSettings):
     """JIRA integration configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="JIRA_")
+    model_config = _env_config("JIRA_")
 
     url: str = Field(
         default="", description="JIRA base URL (e.g. https://your-domain.atlassian.net)"
@@ -132,7 +145,7 @@ class JiraSettings(BaseSettings):
 class StorageSettings(BaseSettings):
     """Storage configuration — SQLite by default, PostgreSQL optional."""
 
-    model_config = SettingsConfigDict(env_prefix="STORAGE_")
+    model_config = _env_config("STORAGE_")
 
     url: str = Field(
         default="sqlite:///.langops/data.db",
@@ -175,6 +188,90 @@ class Settings(BaseSettings):
     remediation: RemediationSettings = Field(default_factory=RemediationSettings)
     jira: JiraSettings = Field(default_factory=JiraSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inject_env_file_into_nested(
+        cls, values: dict[str, object]
+    ) -> dict[str, object]:
+        """Ensure all nested settings read the .env file so prefix-based env vars are found.
+
+        Pydantic v2 instantiates nested BaseSettings via default_factory BEFORE
+        model_post_init runs, so nested models fail validation (missing env vars)
+        before model_post_init can fix them. This validator runs before any
+        field validation, allowing us to replace the raw dicts with properly
+        instantiated submodels that have the correct _env_file.
+        """
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+        nested_factories: list[type[BaseSettings]] = [
+            LLMSettings,
+            LangfuseSettings,
+            PrometheusSettings,
+            AliyunSettings,
+            VectorStoreSettings,
+            RedisSettings,
+            FeishuSettings,
+            DingtalkSettings,
+            WechatWorkSettings,
+            AlertDedupSettings,
+            RemediationSettings,
+            JiraSettings,
+            StorageSettings,
+        ]
+
+        for factory in nested_factories:
+            field_name = _factory_to_field_name(factory)
+            if field_name in values and isinstance(values[field_name], dict):
+                # Replace raw dict (from pydantic validation) with a properly
+                # instantiated submodel that has _env_file configured.
+                values[field_name] = factory(
+                    _env_file=env_file, _env_file_encoding=env_file_encoding
+                )
+
+        return values
+
+    @model_validator(mode="after")
+    def _raise_config_errors(self) -> "Settings":
+        """Translate ValidationError into human-friendly messages pointing at .env vars."""
+        missing: list[str] = []
+        if not self.llm.api_key:
+            missing.append("LLM_API_KEY")
+        if not self.langfuse.public_key:
+            missing.append("LANGFUSE_PUBLIC_KEY")
+        if not self.langfuse.secret_key:
+            missing.append("LANGFUSE_SECRET_KEY")
+
+        if missing:
+            lines = [
+                "Missing required configuration. Add these to .env:",
+                *[f"  {v}" for v in missing],
+                "",
+                "See .env.example for all available options.",
+            ]
+            raise ValueError("\n".join(lines))
+        return self
+
+
+def _factory_to_field_name(factory: type[BaseSettings]) -> str:
+    """Convert nested settings class name to its field name in Settings."""
+    mapping: dict[type[BaseSettings], str] = {
+        LLMSettings: "llm",
+        LangfuseSettings: "langfuse",
+        PrometheusSettings: "prometheus",
+        AliyunSettings: "aliyun",
+        VectorStoreSettings: "vector_store",
+        RedisSettings: "redis",
+        FeishuSettings: "feishu",
+        DingtalkSettings: "dingtalk",
+        WechatWorkSettings: "wechat_work",
+        AlertDedupSettings: "alert_dedup",
+        RemediationSettings: "remediation",
+        JiraSettings: "jira",
+        StorageSettings: "storage",
+    }
+    return mapping[factory]
 
 
 @lru_cache

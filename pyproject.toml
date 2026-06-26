@@ -38,11 +38,15 @@ dependencies = [
     # Storage
     "sqlalchemy>=2.0.0",
     "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
 
     # Utilities
     "structlog>=24.1.0",
     "tenacity>=8.2.0",
 ]
+
+[project.scripts]
+langops-server = "langops.server:main"
 
 [project.optional-dependencies]
 dev = [

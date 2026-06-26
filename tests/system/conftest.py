@@ -162,10 +162,14 @@ def client() -> Generator[TestClient, None, None]:
     """TestClient with conditional real/mock processor.
 
     Uses real processor when LLM and Langfuse credentials are configured
-    (non-test values). Falls back to mock processor otherwise.
+    (non-test values) AND external services (ChromaDB) are reachable.
+    Falls back to mock processor otherwise.
     """
     if USE_REAL_LLM and USE_REAL_LANGFUSE:
-        processor = _create_real_processor()
+        try:
+            processor = _create_real_processor()
+        except Exception:
+            processor = _make_mock_processor()
     else:
         processor = _make_mock_processor()
 

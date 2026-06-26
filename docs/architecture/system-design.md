@@ -723,7 +723,7 @@ class RemediationRepository(ABC):
     async def list_pending() -> list[dict]: ...
 ```
 
-**实现**：`src/langops/storage/sql.py` → `SqlStorage`，默认 SQLite（`sqlite+aiosqlite:///.langops/data.db`），配置 `STORAGE_URL` 可切换 PostgreSQL。
+**实现**：`src/langops/storage/sql.py` → `SqlStorage`，默认 SQLite（`sqlite:///.langops/data.db`，走 SQLAlchemy 同步 driver + `asyncio.to_thread`），配置 `STORAGE_URL` 可切换 PostgreSQL。
 
 **初始化**：
 ```bash
