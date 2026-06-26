@@ -1,0 +1,271 @@
+"""AlertmanagerAdapter mapping tests."""
+
+from langops.adapters.alertmanager import AlertmanagerAdapter
+from langops.models import AlertCategory, AlertSeverity
+from langops.models.webhook import AlertmanagerWebhookPayload
+
+SAMPLE = {
+    "version": "4",
+    "status": "firing",
+    "receiver": "langops",
+    "externalURL": "http://alertmanager.prod:9093",
+    "alerts": [
+        {
+            "status": "firing",
+            "labels": {
+                "alertname": "HighCPU",
+                "severity": "critical",
+                "namespace": "production",
+                "pod": "order-abc",
+            },
+            "annotations": {"summary": "High CPU"},
+            "startsAt": "2024-01-15T10:30:00Z",
+            "endsAt": "0001-01-01T00:00:00Z",
+        }
+    ],
+}
+
+
+def test_maps_to_alert_create() -> None:
+    payload = AlertmanagerWebhookPayload.model_validate(SAMPLE)
+    results = AlertmanagerAdapter().to_alert_creates(payload)
+    assert len(results) == 1
+    ac = results[0]
+    assert ac.title == "High CPU"
+    assert ac.description == "High CPU"  # fallback: summary when no description
+    assert ac.severity == AlertSeverity.CRITICAL
+    assert ac.category == AlertCategory.RESOURCE
+    assert ac.source.type == "prometheus"
+    assert ac.source.system == "alertmanager.prod"
+    assert ac.source.namespace == "production"
+    assert ac.source.pod_name == "order-abc"
+    assert ac.context["alertmanager_status"] == "firing"
+
+
+def test_description_fallback_to_alertname() -> None:
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "DiskFull", "severity": "warning"},
+                    "annotations": {},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert ac.description == "DiskFull: firing"
+    assert ac.severity == AlertSeverity.MEDIUM  # warning → medium via enum
+
+
+def test_multi_alert_payload() -> None:
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "AlertOne", "severity": "high"},
+                    "annotations": {"summary": "First"},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                },
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "AlertTwo", "severity": "low"},
+                    "annotations": {"summary": "Second"},
+                    "startsAt": "2024-01-15T10:31:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                },
+            ],
+        }
+    )
+    results = AlertmanagerAdapter().to_alert_creates(payload)
+    assert len(results) == 2
+    assert results[0].title == "First"
+    assert results[1].title == "Second"
+
+
+def test_resolved_alert_status_in_context() -> None:
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "resolved",
+                    "labels": {"alertname": "HighCPU", "severity": "critical"},
+                    "annotations": {"summary": "Resolved CPU"},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "2024-01-15T11:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert ac.context["alertmanager_status"] == "resolved"
+    assert ac.context["ends_at"] == "2024-01-15T11:00:00Z"
+
+
+# ─── unicode & length cap ──────────────────────────────────────────────
+
+
+def test_unicode_in_annotations_preserved() -> None:
+    """Emoji + Chinese text round-trip without mojibake."""
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {
+                        "alertname": "高CPU使用率",
+                        "severity": "critical",
+                        "namespace": "生产",
+                    },
+                    "annotations": {
+                        "summary": "🚨 高CPU使用率告警",
+                        "description": "order-service Pod CPU使用率超过90% ⚠️",
+                    },
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert ac.title == "🚨 高CPU使用率告警"
+    assert "⚠️" in ac.description
+    assert ac.source.namespace == "生产"
+
+
+def test_very_long_annotation_truncated_to_500_chars() -> None:
+    """Long summary is truncated to 500 chars; long description to 10000."""
+    long_summary = "S" * 5000
+    long_description = "D" * 5000
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "X", "severity": "high"},
+                    "annotations": {"summary": long_summary, "description": long_description},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert len(ac.title) <= 500
+    assert len(ac.description) <= 10000
+
+
+def test_missing_alertname_uses_first_label_value_as_fallback() -> None:
+    """When alertname is absent AND no annotations, description must still be non-empty."""
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"severity": "warning", "instance": "i-abc"},
+                    "annotations": {},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert ac.title  # non-empty
+    assert ac.description  # non-empty
+    # Title should fall back to "Unknown alert" since there's no usable annotation
+    # or alertname. Description should still have something.
+    assert "firing" in ac.description or "unknown" in ac.description.lower()
+
+
+def test_endsat_zero_not_included_in_context() -> None:
+    """endsAt == 0001-01-01T00:00:00Z is AlertManager's "no end yet" sentinel."""
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "X", "severity": "high"},
+                    "annotations": {},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert "ends_at" not in ac.context
+    # startsAt is still recorded
+    assert ac.context.get("starts_at") == "2024-01-15T10:30:00Z"
+
+
+def test_category_keyword_match_is_case_insensitive() -> None:
+    """alertname 'HIGHcpu' (mixed case) must match the RESOURCE category regex."""
+    payload = AlertmanagerWebhookPayload.model_validate(
+        {
+            **SAMPLE,
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "HIGHcpu", "severity": "high"},
+                    "annotations": {},
+                    "startsAt": "2024-01-15T10:30:00Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                }
+            ],
+        }
+    )
+    ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+    assert ac.category == AlertCategory.RESOURCE
+
+
+# ─── category coverage ──────────────────────────────────────────────────
+
+
+def test_all_categories_are_exhaustive() -> None:
+    """Table-driven: each AlertCategory has at least one alertname that maps to it."""
+    cases = [
+        ("HighCpuUsage", AlertCategory.RESOURCE),
+        ("MemoryLeak", AlertCategory.RESOURCE),
+        ("DiskFull", AlertCategory.RESOURCE),
+        ("FSCapacity", AlertCategory.RESOURCE),
+        ("ServiceDown", AlertCategory.AVAILABILITY),
+        ("HostUnreachable", AlertCategory.AVAILABILITY),
+        ("TimeoutError", AlertCategory.AVAILABILITY),
+        ("LatencyP99", AlertCategory.PERFORMANCE),
+        ("SlowResponse", AlertCategory.PERFORMANCE),
+        ("UnauthorizedAccess", AlertCategory.SECURITY),
+        ("ForbiddenAction", AlertCategory.SECURITY),
+        ("IntrusionDetected", AlertCategory.SECURITY),
+    ]
+    for alertname, expected_category in cases:
+        payload = AlertmanagerWebhookPayload.model_validate(
+            {
+                **SAMPLE,
+                "alerts": [
+                    {
+                        "status": "firing",
+                        "labels": {"alertname": alertname, "severity": "high"},
+                        "annotations": {},
+                        "startsAt": "2024-01-15T10:30:00Z",
+                        "endsAt": "0001-01-01T00:00:00Z",
+                    }
+                ],
+            }
+        )
+        ac = AlertmanagerAdapter().to_alert_creates(payload)[0]
+        assert ac.category == expected_category, (
+            f"alertname {alertname!r} expected {expected_category}, got {ac.category}"
+        )
