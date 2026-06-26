@@ -44,34 +44,47 @@
 
 ```
 src/langops/
+├── core/
+│   ├── audit.py                    # NEW: AuditLogger (rotating file, 7d retention)
+│   └── config.py                   # MODIFY: WebhookSettings
 ├── models/
-│   └── webhook.py                  # NEW: Pydantic models for AM v4 payload
+│   └── webhook.py                  # NEW: AM v4 payload + WebhookBatchResponse
 ├── adapters/
 │   ├── __init__.py                 # NEW (package marker)
 │   └── alertmanager.py             # NEW: AlertmanagerAdapter (parse + map)
 ├── web/
+│   ├── _alert_flow.py              # NEW: process_one_alert helper
+│   ├── _coalesce.py                # NEW: CoalesceBuffer + parse_coalesce_duration
 │   ├── api/
+│   │   ├── alerts.py               # MODIFY: delegate to process_one_alert
 │   │   └── webhooks.py             # NEW: webhook routes
-│   └── dependencies.py             # MODIFY: add get_alertmanager_adapter, get_coalesce_buffer
-└── core/
-    └── config.py                   # MODIFY: WebhookSettings (max payload, alert cap, audit TTL)
+│   ├── dependencies.py             # MODIFY: adapter, audit, coalesce DI
+│   ├── main.py                     # MODIFY: include webhooks router
+│   └── metrics.py                  # MODIFY: webhook counters/histograms
 
 tests/
 ├── unit/
+│   ├── test_core/
+│   │   └── test_audit.py           # NEW
 │   ├── test_adapters/
 │   │   └── test_alertmanager_adapter.py   # NEW
-│   └── test_models/
-│       └── test_webhook_payload.py        # NEW
+│   ├── test_models/
+│   │   └── test_webhook_payload.py        # NEW
+│   └── test_web/
+│       ├── test_alert_flow.py             # NEW
+│       └── test_coalesce_buffer.py        # NEW
 └── integration/
-    └── test_api/
-        └── test_webhook_alertmanager.py   # NEW
+    └── test_webhook_alertmanager.py       # NEW
 ```
 
 **File responsibility:**
 
 | File | Responsibility | Does NOT do |
 |------|---------------|-------------|
-| `models/webhook.py` | Pydantic schema for AM v4 payload | Mapping logic, HTTP handling |
+| `core/audit.py` | `AuditLogger` — dedicated rotating audit file | Business logic |
+| `web/_alert_flow.py` | `process_one_alert()` shared by alerts + webhooks routes | HTTP routing |
+| `web/_coalesce.py` | `CoalesceBuffer`, `parse_coalesce_duration()` | Adapter mapping |
+| `models/webhook.py` | Pydantic schema for AM v4 payload + `WebhookBatchResponse` | Mapping logic, HTTP handling |
 | `adapters/alertmanager.py` | `AlertmanagerAdapter.to_alert_creates(payload) -> list[AlertCreate]` | HTTP, logging, dedup |
 | `web/api/webhooks.py` | HTTP route, batch dispatch, coalesce wiring | Adapter internals |
 | `web/dependencies.py` | DI factories for adapter + coalesce buffer | Anything else |
@@ -81,23 +94,22 @@ tests/
 ```
 AM ──POST──▶ FastAPI route
                   │
+                  ├─ Read raw body; reject if len(body) > max_payload_bytes (422)
                   ├─ Pydantic validates AM payload (rejected → 422)
+                  ├─ Reject if len(alerts) > max_alerts_per_batch (422)
                   ├─ Adapter maps payload → list[AlertCreate]
-                  ├─ Coalesce branch (if ?coalesce=Nm):
+                  ├─ Coalesce branch (if ?coalesce=Nm AND workers==1):
                   │     └─ push alerts into CoalesceBuffer
-                  │        └─ buffer flushes after N minutes → spawns processing task
+                  │        └─ buffer flushes after window → asyncio.Task → process_one_alert × N
                   └─ Default branch:
-                        └─ for each alert:
-                             ├─ process_one() (extracted helper, see §3.4)
-                             │     ├─ dedup.evaluate → suppress? → audit + return
-                             │     ├─ AlertProcessor.process
-                             │     ├─ persist_alert_and_result
-                             │     ├─ (optional) create remediation plan + JIRA
-                             │     └─ audit log (success | failure)
-                             └─ asyncio.gather (return_exceptions=False)
+                        └─ asyncio.gather(*[
+                             process_one_alert(...)  # catches all exceptions internally
+                           ])
                   │
                   └─ Response: 200 OK with per-alert results list
 ```
+
+**Batch error isolation:** `process_one_alert` **must catch all exceptions** and return `AnalysisResponse(success=False, error=...)`. `asyncio.gather` may use `return_exceptions=False` safely because no task raises. This matches existing `create_alert` try/except semantics (§5).
 
 ### 3.3 Audit Log
 
@@ -105,10 +117,11 @@ Every webhook event records a structured log line with these fields:
 
 | Event | Log key | Required fields |
 |-------|---------|-----------------|
-| Webhook received | `audit.webhook.received` | `webhook_source`, `request_id`, `alert_count`, `external_labels` (truncated to first 5) |
-| Per-alert processed | `audit.alert.processed` | `webhook_source`, `alert_id`, `decision` (process/suppress/failure), `fingerprint`, `trace_id` (if RCA ran), `duration_ms` |
-| Coalesce window opened | `audit.coalesce.opened` | `webhook_source`, `coalesce_seconds`, `first_alert_id` |
-| Coalesce window flushed | `audit.coalesce.flushed` | `webhook_source`, `coalesce_seconds`, `alert_count`, `duration_ms` |
+| Webhook received | `webhook.received` | `webhook_source`, `request_id`, `alert_count`, `group_labels` (truncated to first 5 keys) |
+| Per-alert processed | `alert.processed` | `webhook_source`, `alert_id`, `decision` (process/suppress/failure), `fingerprint`, `trace_id` (if RCA ran), `duration_ms` |
+| Coalesce window opened | `coalesce.opened` | `webhook_source`, `coalesce_seconds`, `first_alert_id` |
+| Coalesce window flushed | `coalesce.flushed` | `webhook_source`, `coalesce_seconds`, `alert_count`, `duration_ms` |
+| Adapter mapping failed | `adapter.mapping_failed` | `webhook_source`, `alert_index`, `error` |
 
 **Audit log destination:** `logs/langops-audit.log` (rotated daily, retained 7 days). Configurable via `WebhookSettings.audit_log_path` and `WebhookSettings.audit_log_retention_days`. **Default retention: 7 days** (configurable). Cleanup happens via `TimedRotatingFileHandler`'s built-in retention — no separate cleanup job required.
 
@@ -118,11 +131,13 @@ Every webhook event records a structured log line with these fields:
 
 ### 3.4 Refactor: extract `process_one_alert` from `POST /api/v1/alerts`
 
-Current `src/langops/web/api/alerts.py::create_alert` contains the full processing flow inline (~100 lines). Both the existing route AND the new webhook route need this flow. To avoid duplication, **extract a helper** `process_one_alert(alert_create, processor, dedup, remediation_registry, jira) -> AnalysisResponse` into `src/langops/agent/alert_processor.py` (or a new `src/langops/web/_alert_flow.py` helper — see plan for the chosen home).
+Current `src/langops/web/api/alerts.py::create_alert` contains the full processing flow inline (~100 lines). Both the existing route AND the new webhook route need this flow. **Extract** `process_one_alert(alert_create, processor, dedup, remediation_registry, jira, *, webhook_source: str | None = None, audit: AuditLogger | None = None) -> AnalysisResponse` into `src/langops/web/_alert_flow.py`.
 
-**Constraint:** The existing route's behavior and response shape must remain identical. The unit tests for `POST /api/v1/alerts` must continue to pass without modification.
+**Constraint:** The existing route's behavior and response shape must remain identical. Re-run `tests/unit/test_web/test_api.py` after refactor — no test modifications required.
 
-**Helper location:** `src/langops/web/_alert_flow.py` (new private module). Rationale: it imports web-layer dependencies (`JiraService`, `RemediationRegistry` via DI) and orchestrating metrics — not pure agent logic. Keeping it under `web/` makes the dependency direction clear (`web → agent`, never the reverse).
+**Helper location:** `src/langops/web/_alert_flow.py` (new private module). Rationale: it imports web-layer dependencies (`JiraService`, `RemediationRegistry`) and orchestrates metrics — not pure agent logic. Keeping it under `web/` makes the dependency direction clear (`web → agent`, never the reverse).
+
+**Exception policy:** `process_one_alert` wraps the entire flow in `try/except Exception` and always returns `AnalysisResponse` — never raises. Per-alert failures become `success=False` entries in the webhook batch response.
 
 ### 3.5 Coalesce Buffer
 
@@ -154,7 +169,36 @@ Current `src/langops/web/api/alerts.py::create_alert` contains the full processi
 | `audit_log_retention_days` | `7` | Auto-cleanup window |
 | `coalesce_max_buffered_alerts` | `500` | Per-source buffer cap |
 
+**Multi-worker constraint:** Coalesce buffer is **in-process only**. When `settings.workers > 1`, the webhook route **ignores** the `?coalesce=` parameter and logs a WARNING (`coalesce.disabled_multi_worker`). Document this in API reference troubleshooting. Upgrade path: Redis-backed buffer (§9).
+
+### 3.6 Payload Size Enforcement
+
+Before Pydantic parsing, the route reads the raw body via `await request.body()` and checks `len(body) <= settings.webhook.max_payload_bytes`. If exceeded, return **422** with `{"detail": "payload too large"}`. This prevents large bodies from being parsed into memory twice.
+
+If `Content-Length` header is present and exceeds the limit, reject immediately without reading the body.
+
 ## 4. API Contract
+
+### 4.0 Identifier Conventions
+
+Two parallel identifier namespaces — do not conflate:
+
+| Field | AM endpoint value | Used in | Purpose |
+|-------|-------------------|---------|---------|
+| `webhook_source` | `"alertmanager"` | Audit log, metrics labels, coalesce bucket key | Identifies which webhook endpoint received the callback |
+| `AlertSource.type` | `"prometheus"` | Domain model, dedup fingerprint, collectors | Identifies the underlying monitoring system for RCA/collection |
+
+Future CMS endpoint: `webhook_source="aliyun_cms"`, `AlertSource.type="aliyun"`.
+
+### 4.0a Prometheus Metrics
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `langops_webhook_received_total` | Counter | `webhook_source`, `status` (`success`/`validation_error`/`error`) |
+| `langops_webhook_duration_seconds` | Histogram | `webhook_source` |
+| `langops_webhook_alerts_received_total` | Counter | `webhook_source` |
+
+Labels must be low-cardinality enums only — never `alert_id` or `request_id`.
 
 ### 4.1 `POST /api/v1/webhooks/alertmanager`
 
@@ -251,9 +295,9 @@ AM v4 payload (excerpt; full schema in Pydantic model):
 
 | AM field | LangOps `AlertCreate` field | Notes |
 |----------|----------------------------|-------|
-| `alerts[i].annotations.summary` (or first non-empty annotation) | `title` | Required, ≤500 chars; truncate if longer |
-| `alerts[i].annotations.description` | `description` | Required, ≤10000 chars; truncate if longer |
-| `alerts[i].labels.severity` (normalized) | `severity` | Map: `critical/warning/critical/high`, `info` → `info`, default → `medium` |
+| `alerts[i].annotations.summary` (or first non-empty annotation value) | `title` | Required, ≤500 chars; truncate if longer |
+| Fallback chain (see below) | `description` | Required, ≤10000 chars; truncate if longer |
+| `alerts[i].labels.severity` (pass through; `Alert` validator normalizes) | `severity` | Adapter passes raw label string; `Alert.normalize_severity` handles mapping |
 | Inferred from alertname + labels (deterministic keyword match) | `category` | First-match wins (checked in this order): keywords `cpu|memory|disk|fs|filesystem` → `resource`; `down|unreachable|timeout|unavailable|outage` → `availability`; `latency|slow|throttle|backlog` → `performance`; `auth|unauthorized|forbidden|intrusion` → `security`. Fallback: `performance`. Match is case-insensitive against `alertname` + concatenated `labels.values()`. |
 | `type = "prometheus"` (hard-coded) | `source.type` | AM is always the source type for this endpoint |
 | `externalURL` host or `labels.job` | `source.system` | Prefer externalURL host; fallback `labels.job` |
@@ -266,23 +310,34 @@ AM v4 payload (excerpt; full schema in Pydantic model):
 | `alerts[i].startsAt` | `context["starts_at"]` | ISO 8601 string |
 | `alerts[i].endsAt` (if non-zero) | `context["ends_at"]` | ISO 8601 string |
 | `alerts[i].status` | `context["alertmanager_status"]` | `firing` / `resolved` |
-| `metric_data` | (none, AM doesn't send it directly) | Pass empty dict; collector fetches via `metric_data` if present |
+| `metric_data` | (none, AM doesn't send it directly) | Pass empty dict; collector fetches metrics at RCA time |
 
-**`severity` normalization** (matches `Alert.normalize_severity` in `models/alert.py:60`):
+**`description` fallback chain** (first non-empty wins):
 
-| AM label value | LangOps `AlertSeverity` |
-|----------------|--------------------------|
+1. `alerts[i].annotations.description`
+2. `alerts[i].annotations.summary`
+3. `alerts[i].annotations.message` (some AM rules use this key)
+4. `f"{labels.alertname}: {alerts[i].status}"` (last resort — always non-empty if alertname present)
+
+**`severity` normalization** — Adapter passes the raw `labels.severity` string (or `"medium"` if missing). `Alert` model's `normalize_severity` validator ( `models/alert.py:60` ) performs the final mapping:
+
+| AM label value | LangOps `AlertSeverity` (via validator) |
+|----------------|------------------------------------------|
 | `critical`, `page` | `CRITICAL` |
-| `warning`, `warn` | `HIGH` |
+| `high` | `HIGH` |
+| `medium`, `warning`, `warn` | `MEDIUM` |
+| `low` | `LOW` |
 | `info`, `information` | `INFO` |
-| (anything else, missing) | `MEDIUM` |
+| (anything else, missing) | `INFO` (validator default) |
+
+Adapter may pre-normalize common AM values (`page` → `critical`) before constructing `AlertCreate`, but **must not contradict** the validator table above.
 
 ## 5. Error Handling
 
 | Failure | Behavior |
 |---------|----------|
-| Malformed JSON | 422, audit log `WARNING`, no per-alert audit entries |
-| Payload > `max_payload_bytes` | 422 with `error: "payload too large"` |
+| Malformed JSON | 422, audit `adapter.mapping_failed` or `webhook.received` skipped; log WARNING via structlog |
+| Payload > `max_payload_bytes` | 422 with `{"detail": "payload too large"}` — checked on raw body before Pydantic (§3.6) |
 | `len(alerts) > max_alerts_per_batch` | 422 with `error: "batch too large"` |
 | Pydantic validation error | 422, audit log `WARNING` with `validation_errors` (truncated) |
 | Per-alert RCA failure | That alert's `results[i]` has `success: false`, others continue. Webhook returns 200 (partial success). Audit log `WARNING` per failing alert. |
@@ -311,15 +366,15 @@ AM v4 payload (excerpt; full schema in Pydantic model):
 | Test file | Coverage |
 |-----------|----------|
 | `test_models/test_webhook_payload.py` | Pydantic parses a real AM v4 payload (sample from official docs), rejects malformed (extra required fields, missing alerts array), accepts future-compatible extras |
-| `test_adapters/test_alertmanager_adapter.py` | Mapping rules per §4.3, severity normalization table, truncation of overlong title/description, empty labels handling, multi-alert payload → list of N `AlertCreate`, alerts with `status=resolved` |
+| `test_adapters/test_alertmanager_adapter.py` | Mapping rules per §4.3, severity via validator, description fallback chain (no description → summary → message → alertname), truncation, multi-alert payload, `status=resolved` |
 | `test_web/test_coalesce_buffer.py` | Buffer accepts alerts up to cap, overflow flushes + warns, window resets on push, flush spawns processing task |
 
 ### Integration Tests (`tests/integration/test_api/`)
 
 | Test file | Coverage |
 |-----------|----------|
-| `test_webhook_alertmanager.py` | `POST /api/v1/webhooks/alertmanager` happy path (1 alert, firing), multi-alert (3 alerts, gather), suppress path (duplicate), failure path (mocked LLM error), oversize payload → 422, malformed JSON → 422, coalesce param → returns immediately + processes async, audit log file contains expected entries |
-| `test_alerts_route_unchanged.py` | Regression: existing `POST /api/v1/alerts` tests still pass after refactor (re-run existing suite) |
+| `test_webhook_alertmanager.py` | Happy path, multi-alert gather, suppress, per-alert failure (mock LLM), oversize payload → 422, malformed JSON → 422, coalesce returns immediately, audit log entries, `workers>1` ignores coalesce |
+| Regression | Re-run `tests/unit/test_web/test_api.py` after `process_one_alert` refactor — no new regression file needed |
 
 ### Test Pattern Notes
 
@@ -362,9 +417,9 @@ Add new variables under a `# Webhooks (Prometheus AlertManager)` section:
 - `WEBHOOK_AUDIT_LOG_RETENTION_DAYS=7`
 - `WEBHOOK_COALESCE_MAX_BUFFERED_ALERTS=500`
 
-### `CHANGELOG.md` (if exists)
+### `CHANGELOG.md`
 
-Add entry under "Unreleased": "feat(webhooks): Prometheus AlertManager webhook adapter with optional time-window coalescing".
+Skip — file does not exist in the repository. If added later, include: `feat(webhooks): Prometheus AlertManager webhook adapter with optional time-window coalescing`.
 
 ## 9. Upgrade Path (Future)
 
@@ -423,7 +478,7 @@ class AuditLogger:
 | `coalesce.flushed` | `CoalesceBuffer` | `webhook_source`, `coalesce_seconds`, `alert_count`, `duration_ms` |
 | `adapter.mapping_failed` | adapter | `webhook_source`, `alert_index`, `error` (when mapping throws) |
 
-The `webhook_source` field is **always present** and takes values like `prometheus` / `aliyun_cms` / future sources. This is the tag CMS will reuse.
+The `webhook_source` field is **always present**. Values: `alertmanager` (this spec), `aliyun_cms` (future CMS spec). Do **not** use `prometheus` as `webhook_source` — that value is reserved for `AlertSource.type`.
 
 ### 11.3 Response Shape Compatibility
 
@@ -468,6 +523,6 @@ After CMS spec lands, evaluate whether `AlertCreate` needs new fields. Likely ca
 
 ---
 
-**Version:** 2026-06-26
+**Version:** 2026-06-26 (rev. 2 — post-review fixes)
 **Author:** Brainstorming session, in collaboration with user
-**Status:** Awaiting user review
+**Status:** Approved (2026-06-26)
