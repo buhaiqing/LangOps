@@ -4,11 +4,13 @@ from functools import lru_cache
 
 from langfuse import Langfuse
 
+from langops.adapters.alertmanager import AlertmanagerAdapter
 from langops.agent import AlertProcessor, RCAEngine
 from langops.agent.nl_query_engine import NLQueryEngine
 from langops.agent.predictive_engine import PredictiveEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import get_logger, settings
+from langops.core.audit import AuditLogger
 from langops.knowledge import VectorStore
 from langops.services import (
     AlertNoiseReducer,
@@ -18,6 +20,7 @@ from langops.services import (
     RemediationRegistry,
 )
 from langops.storage import get_storage
+from langops.web._coalesce import CoalesceBuffer
 
 logger = get_logger(__name__)
 
@@ -104,7 +107,11 @@ def get_jira_service() -> JiraService:
 
 @lru_cache
 def get_notification_service() -> NotificationService | None:
-    if not settings.feishu.webhook and not settings.dingtalk.webhook and not settings.wechat_work.webhook:
+    if (
+        not settings.feishu.webhook
+        and not settings.dingtalk.webhook
+        and not settings.wechat_work.webhook
+    ):
         return None
     return NotificationService(
         feishu_webhook=settings.feishu.webhook,
@@ -158,3 +165,32 @@ async def persist_alert_and_result(alert, result) -> None:
         await storage.analyses.save(result)
     except Exception as e:
         logger.warning("Failed to persist alert", error=str(e), alert_id=alert.id)
+
+
+# ─── Webhook DI factories ───────────────────────────────────────────────
+
+
+@lru_cache
+def get_audit_logger() -> AuditLogger:
+    """Process-wide AuditLogger singleton (file-based, rotating)."""
+    return AuditLogger(
+        path=settings.webhook.audit_log_path,
+        retention_days=settings.webhook.audit_log_retention_days,
+    )
+
+
+@lru_cache
+def get_alertmanager_adapter() -> AlertmanagerAdapter:
+    """Stateless AlertManager payload adapter."""
+    return AlertmanagerAdapter()
+
+
+def get_coalesce_buffer() -> CoalesceBuffer:
+    """Return the CoalesceBuffer instance stored on ``app.state`` by lifespan.
+
+    Tests inject their own buffer via ``app.dependency_overrides``; in production
+    the lifespan handler in ``main.py`` sets ``app.state.coalesce_buffer`` once.
+    """
+    from langops.web.main import app
+
+    return app.state.coalesce_buffer
