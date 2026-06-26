@@ -199,3 +199,83 @@ def test_shutdown_flushes_all_pending() -> None:
         assert sources == {"alertmanager", "prometheus"}
 
     asyncio.run(runner())
+
+
+# ─── concurrency & failure handling ────────────────────────────────────
+
+
+def test_concurrent_pushes_to_same_source_are_serialized() -> None:
+    """10 concurrent push() to the same source → flush receives exactly 10 alerts."""
+    flushed: list[list[AlertCreate]] = []
+
+    async def on_flush(source: str, alerts: list[AlertCreate]) -> None:
+        flushed.append(list(alerts))
+
+    async def runner() -> None:
+        buf = CoalesceBuffer(cap=100, on_flush=on_flush, window_seconds=0.2)
+        coros = [buf.push("alertmanager", _make_alert(i)) for i in range(10)]
+        await asyncio.gather(*coros)
+        # Wait long enough for the window to fire
+        await asyncio.sleep(0.5)
+        assert len(flushed) == 1, f"expected 1 flush, got {len(flushed)}"
+        assert len(flushed[0]) == 10, (
+            f"expected 10 alerts in flush, got {len(flushed[0])}"
+        )
+        titles = sorted(a.title for a in flushed[0])
+        assert titles == sorted(f"alert-{i}" for i in range(10))
+
+    asyncio.run(runner())
+
+
+def test_flush_callback_exception_does_not_corrupt_buffer() -> None:
+    """on_flush raising must not leave the bucket stuck — subsequent pushes work."""
+    flush_calls = 0
+    pushed_after_failure: list[int] = []
+
+    async def on_flush(source: str, alerts: list[AlertCreate]) -> None:
+        nonlocal flush_calls
+        flush_calls += 1
+        # First flush always raises; subsequent flushes succeed
+        if flush_calls == 1:
+            raise RuntimeError("simulated downstream failure")
+
+    async def runner() -> None:
+        buf = CoalesceBuffer(cap=10, on_flush=on_flush, window_seconds=0.1)
+        # 1st push → triggers a flush that fails
+        await buf.push("alertmanager", _make_alert(0))
+        await asyncio.sleep(0.2)  # window fires; flush fails internally
+        # 2nd push → must still work
+        await buf.push("alertmanager", _make_alert(1))
+        await asyncio.sleep(0.2)
+        assert flush_calls >= 2, f"expected ≥2 flush calls, got {flush_calls}"
+        pushed_after_failure.append(1)
+
+    asyncio.run(runner())
+    assert pushed_after_failure == [1], (
+        "subsequent push should have completed without exception"
+    )
+
+
+def test_shutdown_flushes_all_pending_sources() -> None:
+    """Distinct source keys must all be flushed on shutdown (not just the first)."""
+    flushed: list[tuple[str, list[AlertCreate]]] = []
+
+    async def on_flush(source: str, alerts: list[AlertCreate]) -> None:
+        flushed.append((source, list(alerts)))
+
+    async def runner() -> None:
+        buf = CoalesceBuffer(cap=100, on_flush=on_flush, window_seconds=10.0)
+        # Push to three distinct sources
+        await buf.push("source-a", _make_alert(0))
+        await buf.push("source-b", _make_alert(1))
+        await buf.push("source-c", _make_alert(2))
+        # shutdown should drain all three
+        await buf.shutdown()
+        assert len(flushed) == 3
+        seen = {s for s, _ in flushed}
+        assert seen == {"source-a", "source-b", "source-c"}
+        # Each bucket had exactly 1 alert
+        for _, alerts in flushed:
+            assert len(alerts) == 1
+
+    asyncio.run(runner())

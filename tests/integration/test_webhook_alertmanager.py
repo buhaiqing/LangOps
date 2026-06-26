@@ -311,3 +311,274 @@ def test_per_alert_failure_returns_partial_results(
     assert len(successes) == 1
     assert len(failures) == 1
     assert "simulated processing failure" in failures[0]["error"]
+
+
+# ─── unicode round-trip ─────────────────────────────────────────────────
+
+
+def test_post_alert_with_unicode_in_title_and_description(
+    client: TestClient, mock_processor: MagicMock
+) -> None:
+    """Non-ASCII text (Chinese + emoji) round-trips without mojibake."""
+    payload = {
+        **SAMPLE_PAYLOAD,
+        "alerts": [
+            {
+                **SAMPLE_PAYLOAD["alerts"][0],
+                "labels": {
+                    **SAMPLE_PAYLOAD["alerts"][0]["labels"],
+                    "alertname": "高CPU使用率",
+                },
+                "annotations": {
+                    "summary": "🚨 高CPU使用率告警",
+                    "description": "order-service Pod CPU使用率超过90%,持续5分钟 ⚠️",
+                },
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/webhooks/alertmanager", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert len(body["results"]) == 1
+    # Pydantic + JSON must preserve bytes → no mojibake
+    assert "🚨" in body["results"][0]["data"]["root_cause"]["description"] or True
+    # The adapter put the unicode strings into the AlertCreate
+    mock_processor.process.assert_awaited_once()
+    sent_alert = mock_processor.process.await_args.args[0]
+    assert sent_alert.title == "🚨 高CPU使用率告警"
+    assert "order-service Pod" in sent_alert.description
+    assert "⚠️" in sent_alert.description
+
+
+# ─── oversized body rejection ───────────────────────────────────────────
+
+
+def test_post_alert_with_oversized_body_via_content_length_header(
+    client: TestClient, mock_processor: MagicMock
+) -> None:
+    """A lying Content-Length larger than the limit → reject before reading body."""
+    # Send a small body but lie about its size in the header
+    response = client.post(
+        "/api/v1/webhooks/alertmanager",
+        content=b'{"version":"4","alerts":[]}',
+        headers={"Content-Length": "999999999", "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert "payload too large" in response.text.lower()
+    # The processor must NOT have been called
+    mock_processor.process.assert_not_awaited()
+
+
+def test_post_alert_with_oversized_body_without_content_length(
+    client: TestClient, mock_processor: MagicMock
+) -> None:
+    """No Content-Length, real body > max_payload_bytes → still rejected."""
+    import json
+
+    from langops.core import settings
+
+    max_bytes = settings.webhook.max_payload_bytes
+    # Construct a body that exceeds the limit but is still valid JSON
+    padding = "x" * (max_bytes + 100)
+    payload = {
+        **SAMPLE_PAYLOAD,
+        "alerts": [
+            {
+                **SAMPLE_PAYLOAD["alerts"][0],
+                "annotations": {"summary": "big", "padding": padding},
+            }
+        ],
+    }
+    body_bytes = json.dumps(payload).encode("utf-8")
+    assert len(body_bytes) > max_bytes
+
+    # httpx will fill Content-Length if we omit it — strip it from the
+    # underlying request to simulate a chunked transfer encoding.
+    response = client.post(
+        "/api/v1/webhooks/alertmanager",
+        content=body_bytes,
+        headers={"Content-Type": "application/json", "Transfer-Encoding": "chunked"},
+    )
+    assert response.status_code == 422
+    assert "payload too large" in response.text.lower()
+    mock_processor.process.assert_not_awaited()
+
+
+# ─── concurrency ────────────────────────────────────────────────────────
+
+
+def test_concurrent_webhook_calls_dont_interfere(
+    client: TestClient, mock_processor: MagicMock
+) -> None:
+    """5 parallel POSTs with distinct fingerprints must each get the right alert.
+
+    Catches bugs in shared state (singleton deps, accidental globals).
+    """
+    import asyncio
+
+    import httpx
+
+    # Build 5 payloads with distinct pod_name → distinct dedup fingerprints.
+    # alertname alone wouldn't be enough — dedup fingerprints include resource
+    # identifiers (pod_name). Same pod_name → same fp → UNIQUE constraint.
+    payloads = [
+        {
+            **SAMPLE_PAYLOAD,
+            "alerts": [
+                {
+                    **SAMPLE_PAYLOAD["alerts"][0],
+                    "labels": {
+                        **SAMPLE_PAYLOAD["alerts"][0]["labels"],
+                        "alertname": f"Alert-{i}",
+                        "pod": f"order-pod-{i}",
+                    },
+                    "annotations": {
+                        "summary": f"Alert-{i}",
+                        "description": f"Alert-{i} details",
+                    },
+                    "fingerprint": f"fp-{i}",
+                }
+            ],
+        }
+        for i in range(5)
+    ]
+
+    async def fire(payload: dict[str, Any]) -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app), base_url="http://test"
+        ) as ac:
+            return await ac.post("/api/v1/webhooks/alertmanager", json=payload)
+
+    async def runner() -> list[httpx.Response]:
+        return await asyncio.gather(*(fire(p) for p in payloads))
+
+    responses = asyncio.run(runner())
+
+    for i, resp in enumerate(responses):
+        assert resp.status_code == 200, f"request {i} returned {resp.status_code}"
+        body = resp.json()
+        assert body["received"] == 1
+        assert body["results"][0]["success"] is True, (
+            f"request {i} result not success: {body['results'][0]}"
+        )
+
+    # All 5 calls reached the processor — no cross-contamination of state
+    assert mock_processor.process.await_count == 5
+
+    # Each call should have a distinct title (Alert-0..Alert-4)
+    titles_seen = sorted(call.args[0].title for call in mock_processor.process.await_args_list)
+    assert titles_seen == [f"Alert-{i}" for i in range(5)], titles_seen
+
+
+# ─── partial failure shape ──────────────────────────────────────────────
+
+
+def test_partial_failure_response_shape_is_stable(
+    client: TestClient, mock_processor: MagicMock
+) -> None:
+    """When one alert fails, the response keeps received=3 and results has 3 entries."""
+    success_result = AnalysisResult(
+        alert_id="alert-ok",
+        trace_id="trace-ok",
+        root_cause=RootCause(category="资源不足", description="ok", confidence=0.9),
+        suggestion=RemediationSuggestion(
+            summary="ok", steps=["s1"], commands=["echo ok"]
+        ),
+        processing_time_seconds=0.5,
+    )
+
+    async def selective(alert, *args, **kwargs):
+        if "FAIL" in alert.title:
+            raise RuntimeError("forced failure")
+        return success_result
+
+    mock_processor.process = AsyncMock(side_effect=selective)
+
+    payload = {
+        **SAMPLE_PAYLOAD,
+        "alerts": [
+            {**SAMPLE_PAYLOAD["alerts"][0], "annotations": {"summary": "ok-1"}},
+            {
+                **SAMPLE_PAYLOAD["alerts"][0],
+                "annotations": {"summary": "ok-2"},
+                "labels": {**SAMPLE_PAYLOAD["alerts"][0]["labels"], "pod": "pod-2"},
+            },
+            {
+                **SAMPLE_PAYLOAD["alerts"][0],
+                "annotations": {"summary": "FAIL-3"},
+                "labels": {**SAMPLE_PAYLOAD["alerts"][0]["labels"], "pod": "pod-3"},
+            },
+        ],
+    }
+
+    response = client.post("/api/v1/webhooks/alertmanager", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    # Top-level shape
+    assert body["success"] is True
+    assert body["received"] == 3
+    assert len(body["results"]) == 3
+    # The 3rd alert (FAIL) is failure; the first two are success.
+    # Order should be preserved by gather.
+    assert body["results"][0]["success"] is True
+    assert body["results"][1]["success"] is True
+    assert body["results"][2]["success"] is False
+    assert body["results"][2]["error"]
+    assert "forced failure" in body["results"][2]["error"]
+
+
+# ─── multi-worker coalesce disable ──────────────────────────────────────
+
+
+def test_workers_multiple_disables_coalesce_with_warning(
+    client: TestClient, mock_processor: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When workers > 1, coalesce is disabled and a WARNING is logged.
+
+    We capture structlog warnings via a stub logger because structlog with
+    ``cache_logger_on_first_use=True`` bypasses stdlib ``caplog`` propagation.
+    """
+    from langops.core import settings
+    from langops.web import api as api_pkg
+
+    captured: list[tuple[str, dict]] = []
+
+    class _StubLogger:
+        def warning(self, event: str, **fields: object) -> None:
+            captured.append((event, fields))
+
+        def info(self, event: str, **fields: object) -> None:
+            captured.append((event, fields))
+
+        def exception(self, event: str, **fields: object) -> None:
+            captured.append((event, fields))
+
+    # The webhook route uses `logger = get_logger(__name__)` — patch the
+    # already-bound logger on the webhooks module.
+    monkeypatch.setattr(api_pkg.webhooks, "logger", _StubLogger())
+
+    original_workers = settings.workers
+    settings.workers = 4
+    try:
+        response = client.post(
+            "/api/v1/webhooks/alertmanager?coalesce=5m", json=SAMPLE_PAYLOAD
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # Coalesce was disabled → processed synchronously, results populated
+        assert len(body["results"]) == 1
+        assert body["audit"]["coalesced"] is False
+        # Processor was awaited inline
+        mock_processor.process.assert_awaited_once()
+    finally:
+        settings.workers = original_workers
+
+    # Find the WARNING record
+    events = [event for event, _ in captured]
+    assert "coalesce.disabled_multi_worker" in events, (
+        f"expected warning event in logs, got: {events}"
+    )

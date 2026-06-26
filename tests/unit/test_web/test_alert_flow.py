@@ -178,3 +178,87 @@ def test_emits_audit_event_when_audit_logger_provided(
     record = json.loads(lines[-1])
     assert record["webhook_source"] == "alertmanager"
     assert record["decision"] == "success"
+
+
+# ─── audit events for each terminal decision ────────────────────────────
+
+
+def test_process_one_alert_records_audit_suppress_event(
+    tmp_path: Path,
+    dedup: AlertNoiseReducer,
+    remediation_registry: RemediationRegistry,
+    jira: JiraService,
+) -> None:
+    """Dedup suppressing the alert must emit ``alert.processed`` with decision=suppress."""
+    # Seed dedup state so the next call is a duplicate
+    asyncio.run(dedup.evaluate(_seed_alert()))
+
+    log_file = tmp_path / "audit.log"
+    audit = AuditLogger(path=str(log_file), retention_days=7)
+    processor = MagicMock(spec=AlertProcessor)
+    processor.process = AsyncMock()  # never called
+
+    response = asyncio.run(
+        process_one_alert(
+            _alert_create(),
+            processor,
+            dedup,
+            remediation_registry,
+            jira,
+            webhook_source="alertmanager",
+            audit=audit,
+        )
+    )
+
+    assert response.success is True
+    assert response.dedup is not None
+    assert response.dedup.action == "suppress"
+    processor.process.assert_not_awaited()
+
+    audit.close()
+    lines = log_file.read_text(encoding="utf-8").strip().splitlines()
+    records = [json.loads(line) for line in lines]
+    suppress_records = [r for r in records if r["event"] == "alert.processed"]
+    assert len(suppress_records) == 1
+    record = suppress_records[0]
+    assert record["decision"] == "suppress"
+    assert record["webhook_source"] == "alertmanager"
+    assert record.get("fingerprint")  # dedup fingerprint recorded
+
+
+def test_process_one_alert_records_audit_failure_event(
+    tmp_path: Path,
+    dedup: AlertNoiseReducer,
+    remediation_registry: RemediationRegistry,
+    jira: JiraService,
+) -> None:
+    """Processor raising must emit ``alert.processed`` with decision=failure and error."""
+    log_file = tmp_path / "audit.log"
+    audit = AuditLogger(path=str(log_file), retention_days=7)
+    processor = MagicMock(spec=AlertProcessor)
+    processor.process = AsyncMock(side_effect=RuntimeError("processor boom"))
+
+    response = asyncio.run(
+        process_one_alert(
+            _alert_create(),
+            processor,
+            dedup,
+            remediation_registry,
+            jira,
+            webhook_source="alertmanager",
+            audit=audit,
+        )
+    )
+
+    assert response.success is False
+    assert "boom" in (response.error or "")
+
+    audit.close()
+    lines = log_file.read_text(encoding="utf-8").strip().splitlines()
+    records = [json.loads(line) for line in lines]
+    failure_records = [r for r in records if r["event"] == "alert.processed"]
+    assert len(failure_records) == 1
+    record = failure_records[0]
+    assert record["decision"] == "failure"
+    assert record["webhook_source"] == "alertmanager"
+    assert "boom" in record.get("error", "")
