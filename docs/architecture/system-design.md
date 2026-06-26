@@ -1437,7 +1437,41 @@ async def setup_evaluations():
 
 ---
 
-## 10. 演进路线
+## 10. 外部告警源（External Alert Sources）
+
+LangOps 通过 Webhook 接收器接入外部监控系统的告警。每个源都配有专属适配器（adapter），把外部载荷归一化为 LangOps 的 `AlertCreate` 模型。映射之后，所有源共享同一条分析流水线（`process_one_alert`）。
+
+**当前支持的源：**
+
+| 源 | 端点 | 适配器 |
+|----|------|--------|
+| Prometheus AlertManager | `POST /api/v1/webhooks/alertmanager` | `AlertmanagerAdapter` |
+
+**数据流：**
+
+```
+外部系统 → POST /api/v1/webhooks/{source}
+              │
+              ├─ Content-Length 预检
+              ├─ Pydantic 校验源特定载荷
+              ├─ Adapter 映射 → list[AlertCreate]
+              ├─ ?coalesce=Nm 缓冲（可选，进程内）
+              └─ process_one_alert × N
+                    ├─ dedup → 抑制？
+                    ├─ AlertProcessor.process
+                    ├─ persist_alert_and_result
+                    └─（可选）remediation + JIRA
+```
+
+**适配器设计约束**（前瞻）：
+
+- 适配器为具体类（非抽象基类），直到出现第二个具体适配器再考虑抽象
+- 所有源共享：`process_one_alert`、`AuditLogger`、`CoalesceBuffer`、`WebhookBatchResponse` schema
+- 新增源 = 一个新 adapter + 一个新 router + 复用同一共享流水线
+
+---
+
+## 11. 演进路线
 
 ### Phase 1: MVP — ✅ 已完成
 
@@ -1480,9 +1514,9 @@ async def setup_evaluations():
 
 ---
 
-## 11. 附录
+## 12. 附录
 
-### 11.1 术语表
+### 12.1 术语表
 
 | 术语 | 说明 |
 |-----|------|
@@ -1495,7 +1529,7 @@ async def setup_evaluations():
 | RemediationPlan | 待人工审批的修复执行计划 |
 | Alert Dedup | 告警降噪，窗口内重复告警抑制 LLM 调用 |
 
-### 11.2 参考资源
+### 12.2 参考资源
 
 - [Langfuse 官方文档](https://langfuse.com/docs)
 - [Prometheus 最佳实践](https://prometheus.io/docs/practices/)

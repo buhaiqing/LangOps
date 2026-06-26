@@ -13,14 +13,15 @@
 - [2. GET /health — 健康检查](#2-get-health--健康检查)
 - [3. GET /metrics — Prometheus 指标](#3-get-metrics--prometheus-指标)
 - [4. POST /api/v1/alerts — 告警分析](#4-post-apiv1alerts--告警分析)
-- [5. GET /api/v1/alerts/dedup/stats — 降噪统计](#5-get-apiv1alertsdedupstats--降噪统计)
-- [6. GET /api/v1/alerts/health — 告警模块健康检查](#6-get-apiv1alertshealth--告警模块健康检查)
-- [7. POST /api/v1/query — 自然语言查询](#7-post-apiv1query--自然语言查询)
-- [8. POST /api/v1/predict — 容量预测](#8-post-apiv1predict--容量预测)
-- [9. GET /api/v1/remediation — 修复计划列表](#9-get-apiv1remediation--修复计划列表)
-- [10. GET /api/v1/remediation/{plan_id} — 修复计划详情](#10-get-apiv1remediationplan_id--修复计划详情)
-- [11. POST /api/v1/remediation/{plan_id}/execute — 执行修复](#11-post-apiv1remediationplan_idexecute--执行修复)
-- [12. POST /api/v1/remediation/{plan_id}/reject — 拒绝修复](#12-post-apiv1remediationplan_idreject--拒绝修复)
+- [5. POST /api/v1/webhooks/alertmanager — Prometheus Webhook](#5-post-apiv1webhooksalertmanager--prometheus-webhook)
+- [6. GET /api/v1/alerts/dedup/stats — 降噪统计](#6-get-apiv1alertsdedupstats--降噪统计)
+- [7. GET /api/v1/alerts/health — 告警模块健康检查](#7-get-apiv1alertshealth--告警模块健康检查)
+- [8. POST /api/v1/query — 自然语言查询](#8-post-apiv1query--自然语言查询)
+- [9. POST /api/v1/predict — 容量预测](#9-post-apiv1predict--容量预测)
+- [10. GET /api/v1/remediation — 修复计划列表](#10-get-apiv1remediation--修复计划列表)
+- [11. GET /api/v1/remediation/{plan_id} — 修复计划详情](#11-get-apiv1remediationplan_id--修复计划详情)
+- [12. POST /api/v1/remediation/{plan_id}/execute — 执行修复](#12-post-apiv1remediationplan_idexecute--执行修复)
+- [13. POST /api/v1/remediation/{plan_id}/reject — 拒绝修复](#13-post-apiv1remediationplan_idreject--拒绝修复)
 - [数据模型参考](#数据模型参考)
 
 ---
@@ -260,7 +261,94 @@ curl -s -X POST http://localhost:8000/api/v1/alerts \
 
 ---
 
-## 5. GET /api/v1/alerts/dedup/stats — 降噪统计
+## 5. POST /api/v1/webhooks/alertmanager — Prometheus Webhook
+
+Receives Prometheus AlertManager v4 webhook callbacks. Translates the payload into LangOps `AlertCreate` and runs the same AI analysis pipeline as `POST /api/v1/alerts`.
+
+**Use case:** Configure AlertManager to forward firing/resolved alerts to this URL. The adapter normalizes AM's `labels`/`annotations` shape into LangOps's `AlertSource`/`context` fields.
+
+**Configure AlertManager** (`alertmanager.yml`):
+
+```yaml
+receivers:
+  - name: langops
+    webhook_configs:
+      - url: 'http://langops:8000/api/v1/webhooks/alertmanager'
+        send_resolved: true
+```
+
+**Headers:** `Content-Type: application/json`
+
+**Query parameters:**
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `coalesce` | `Ns` / `Nm` / `Nh` | unset | Time-window aggregation. Example: `?coalesce=5m` buffers alerts for 5 minutes after the last arrival, then processes them as one batch. **Disabled when `workers > 1`.** |
+
+**Request body** — AlertManager v4 payload (see [official schema](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config)). Key fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `version` | yes | Always `"4"` |
+| `status` | yes | `firing` or `resolved` |
+| `alerts` | yes | Non-empty array of alert objects |
+| `alerts[].status` | yes | `firing` or `resolved` |
+| `alerts[].labels` | yes | Label key-value pairs (alertname, severity, namespace, pod, ...) |
+| `alerts[].annotations` | no | Free-form annotation values (summary, description, message) |
+| `alerts[].startsAt` | yes | ISO 8601 timestamp |
+| `alerts[].endsAt` | no | ISO 8601 timestamp (zero when still firing) |
+
+**Response 200 OK** (sync):
+
+```json
+{
+  "success": true,
+  "received": 3,
+  "results": [
+    {
+      "alert_id": "alert-a1b2c3d4",
+      "success": true,
+      "data": { /* AnalysisResult */ },
+      "error": null,
+      "dedup": { "fingerprint": "fp-abc", "action": "process", "occurrence_count": 1 },
+      "remediation_plan_id": "plan-..."
+    }
+  ],
+  "audit": { "coalesced": false }
+}
+```
+
+**Response 200 OK** (coalesced): `audit.coalesced: true`, `results: []`. Processing happens after the window expires.
+
+**Errors:**
+
+| Status | When |
+|--------|------|
+| 422 | Payload > `WEBHOOK_MAX_PAYLOAD_BYTES` (default 1MB) |
+| 422 | `len(alerts) > WEBHOOK_MAX_ALERTS_PER_BATCH` (default 100) |
+| 422 | Invalid JSON or AM schema mismatch |
+| 422 | Invalid `coalesce` format |
+
+**Configuration:**
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `WEBHOOK_MAX_PAYLOAD_BYTES` | `1048576` | Reject oversized bodies (DoS guard) |
+| `WEBHOOK_MAX_ALERTS_PER_BATCH` | `100` | Reject oversized batches |
+| `WEBHOOK_AUDIT_LOG_PATH` | `logs/langops-audit.log` | Audit log file (rotated daily) |
+| `WEBHOOK_AUDIT_LOG_RETENTION_DAYS` | `7` | Auto-cleanup window |
+| `WEBHOOK_COALESCE_MAX_BUFFERED_ALERTS` | `500` | Per-source buffer cap |
+
+**Troubleshooting:**
+
+- **`?coalesce=` ignored silently?** Check `workers` setting. Multi-worker deployment disables coalesce (in-process buffer cannot coordinate). Set `workers=1` or remove the query param.
+- **AlertManager keeps retrying (non-2xx)?** Check LangOps reachability and audit log at `logs/langops-audit.log` for `webhook.received` / `alert.processed` decisions.
+- **Audit log empty?** Verify `WEBHOOK_AUDIT_LOG_PATH` is writable; the directory is created automatically.
+- **`webhook_source` vs `source.type`**: audit logs use `webhook_source=alertmanager`. Domain `AlertSource.type` is `prometheus`. Both are present in logs; do not conflate.
+
+---
+
+## 6. GET /api/v1/alerts/dedup/stats — 降噪统计
 
 返回当前活跃的告警分组数及各分组出现次数。
 
@@ -285,7 +373,7 @@ curl http://localhost:8000/api/v1/alerts/dedup/stats
 
 ---
 
-## 6. GET /api/v1/alerts/health — 告警模块健康检查
+## 7. GET /api/v1/alerts/health — 告警模块健康检查
 
 **curl**
 
@@ -304,7 +392,7 @@ curl http://localhost:8000/api/v1/alerts/health
 
 ---
 
-## 7. POST /api/v1/query — 自然语言查询
+## 8. POST /api/v1/query — 自然语言查询
 
 将自然语言问题转换为 PromQL 查询并执行，返回 LLM 解读结果。
 
@@ -343,7 +431,7 @@ curl -s -X POST http://localhost:8000/api/v1/query \
 
 ---
 
-## 8. POST /api/v1/predict — 容量预测
+## 9. POST /api/v1/predict — 容量预测
 
 采集历史指标并预测未来趋势，用于预测性运维。
 
@@ -417,7 +505,7 @@ curl -s -X POST http://localhost:8000/api/v1/predict \
 
 ---
 
-## 9. GET /api/v1/remediation — 修复计划列表
+## 10. GET /api/v1/remediation — 修复计划列表
 
 返回所有待审批的修复计划。
 
@@ -453,7 +541,7 @@ curl -s http://localhost:8000/api/v1/remediation | jq .
 
 ---
 
-## 10. GET /api/v1/remediation/{plan_id} — 修复计划详情
+## 11. GET /api/v1/remediation/{plan_id} — 修复计划详情
 
 **curl**
 
@@ -471,7 +559,7 @@ curl -s http://localhost:8000/api/v1/remediation/plan-a1b2c3d4 | jq .
 
 ---
 
-## 11. POST /api/v1/remediation/{plan_id}/execute — 执行修复
+## 12. POST /api/v1/remediation/{plan_id}/execute — 执行修复
 
 审批并执行（或 dry-run）修复计划。默认 `dry_run=true`，不会执行真实命令。
 
@@ -537,7 +625,7 @@ curl -s -X POST http://localhost:8000/api/v1/remediation/plan-a1b2c3d4/execute \
 
 ---
 
-## 12. POST /api/v1/remediation/{plan_id}/reject — 拒绝修复
+## 13. POST /api/v1/remediation/{plan_id}/reject — 拒绝修复
 
 ### Request Body — `RemediationRejectRequest`
 
