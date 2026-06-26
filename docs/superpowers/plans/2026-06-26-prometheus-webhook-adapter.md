@@ -333,7 +333,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from langops.models.analysis import AnalysisResponse
+from langops.models.analysis import AnalysisResult
 
 
 class AlertmanagerAlert(BaseModel):
@@ -371,7 +371,7 @@ class WebhookAlertResult(BaseModel):
 
     alert_id: str | None = None
     success: bool
-    data: AnalysisResponse | None = None
+    data: AnalysisResult | None = None
     error: str | None = None
     dedup: dict[str, Any] | None = None
     remediation_plan_id: str | None = None
