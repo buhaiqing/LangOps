@@ -45,7 +45,7 @@ src/langops/
 │   └── logging.py
 ├── models/
 │   ├── alert.py
-│   ├── analysis.py             # AnalysisResult、AnalysisResponse、DedupInfo
+│   ├── analysis.py             # AnalysisResult、AnalysisResponse、RootCause、SimilarCase
 │   ├── dedup.py
 │   ├── prediction.py
 │   ├── query.py
@@ -64,6 +64,14 @@ src/langops/
 ├── knowledge/
 │   └── vector_store.py         # ChromaDB 封装
 ├── services/
+│   ├── notification.py         # 飞书 / 钉钉
+│   ├── alert_dedup.py          # 告警降噪
+│   ├── remediation_executor.py # 修复计划注册与 kubectl 白名单执行
+│   └── jira_integration.py     # JIRA 工单（best-effort）
+└── storage/
+    ├── base.py                 # Repository 抽象接口（AlertRepository 等）
+    ├── sql.py                  # SqlStorage 实现（SQLAlchemy）
+    └── models.py               # SQLAlchemy ORM 模型
 │   ├── notification.py         # 飞书 / 钉钉
 │   ├── alert_dedup.py          # 告警降噪
 │   └── remediation_executor.py # 修复计划注册与 kubectl 白名单执行

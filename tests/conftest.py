@@ -2,6 +2,12 @@
 
 import os
 
+from dotenv import load_dotenv
+
+# Load .env FIRST so real credentials (if present) are available.
+# setdefault below only fills in vars that .env didn't provide.
+load_dotenv(override=False)
+
 # ── MUST be set BEFORE any langops imports ──────────────────────────
 # langops.core.config is evaluated at module scope: `settings = get_settings()`
 # which validates LLMSettings.api_key (required). Without these env vars,

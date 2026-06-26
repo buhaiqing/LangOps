@@ -4,8 +4,25 @@ Tests the complete pipeline: HTTP request → validation → dedup → processor
 Validates response schema, dedup behavior, remediation plan creation.
 """
 
+from collections.abc import Generator
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock
+
+from langops.agent.alert_processor import AlertProcessor
+from langops.models import AnalysisResult, RootCause, RemediationSuggestion
+from langops.services import AlertNoiseReducer, RemediationRegistry
+from langops.storage.models import Base
+from langops.storage.sql import SqlDedupRepository, SqlRemediationRepository
+from langops.web.dependencies import (
+    get_alert_dedup,
+    get_alert_processor,
+    get_remediation_registry,
+)
+from langops.web.main import app
+
+from tests.system.conftest import create_sqlite_session
 
 
 class TestK8sAlertFlow:
@@ -130,20 +147,62 @@ class TestDeduplication:
 
 
 class TestProcessorInvocation:
-    """Verify the processor receives correct data."""
+    """Verify the processor receives correct data.
+
+    These tests use their own mock client to verify call behavior,
+    independent of the conftest client (which may use real services).
+    """
+
+    @pytest.fixture
+    def mock_client(self) -> Generator[TestClient, None, None]:
+        """Client with explicit mock processor for call-count assertions."""
+        sf = create_sqlite_session()
+        dedup_repo = SqlDedupRepository(sf)
+        remediation_repo = SqlRemediationRepository(sf)
+        dedup = AlertNoiseReducer(repo=dedup_repo, window_seconds=900, enabled=True)
+        remediation_registry = RemediationRegistry(repo=remediation_repo)
+
+        processor = MagicMock(spec=AlertProcessor)
+        processor.process = AsyncMock(
+            return_value=AnalysisResult(
+                alert_id="alert-sys-test",
+                trace_id="trace-sys-test",
+                root_cause=RootCause(
+                    category="资源不足",
+                    description="Test",
+                    confidence=0.9,
+                    evidence=["test"],
+                ),
+                similar_cases=[],
+                suggestion=RemediationSuggestion(
+                    summary="Test",
+                    steps=[],
+                    commands=[],
+                    risks=[],
+                ),
+                processing_time_seconds=1.0,
+            )
+        )
+
+        app.dependency_overrides[get_alert_processor] = lambda: processor
+        app.dependency_overrides[get_alert_dedup] = lambda: dedup
+        app.dependency_overrides[get_remediation_registry] = lambda: remediation_registry
+        try:
+            yield TestClient(app, raise_server_exceptions=False)
+        finally:
+            app.dependency_overrides.clear()
 
     def test_processor_called_once_per_unique_alert(
         self,
-        client: TestClient,
+        mock_client: TestClient,
         k8s_alert_payload: dict,
-        mock_processor: MagicMock,
     ) -> None:
-        mock_processor.process.reset_mock()
+        mock_client.post("/api/v1/alerts", json=k8s_alert_payload)
 
-        client.post("/api/v1/alerts", json=k8s_alert_payload)
-
-        assert mock_processor.process.await_count == 1
-        call_args = mock_processor.process.call_args
+        # Get the processor from overrides to check call count
+        processor = app.dependency_overrides[get_alert_processor]()
+        assert processor.process.await_count == 1
+        call_args = processor.process.call_args
         alert = call_args[0][0]  # First positional arg
         assert alert.title == k8s_alert_payload["title"]
         assert alert.source.type == "kubernetes"
@@ -152,17 +211,16 @@ class TestProcessorInvocation:
 
     def test_suppressed_alert_does_not_invoke_processor(
         self,
-        client: TestClient,
+        mock_client: TestClient,
         k8s_alert_payload: dict,
-        mock_processor: MagicMock,
     ) -> None:
-        mock_processor.process.reset_mock()
+        mock_client.post("/api/v1/alerts", json=k8s_alert_payload)
+        mock_client.post("/api/v1/alerts", json=k8s_alert_payload)
 
-        client.post("/api/v1/alerts", json=k8s_alert_payload)
-        client.post("/api/v1/alerts", json=k8s_alert_payload)
-
+        # Get the processor from overrides to check call count
+        processor = app.dependency_overrides[get_alert_processor]()
         # Only first alert should trigger processor
-        assert mock_processor.process.await_count == 1
+        assert processor.process.await_count == 1
 
 
 class TestRemediationPlanFlow:

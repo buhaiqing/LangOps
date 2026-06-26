@@ -7,9 +7,6 @@ and that the dedup state is consistent under concurrent requests.
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from langops.agent.alert_processor import AlertProcessor
 from langops.models import (
@@ -19,7 +16,6 @@ from langops.models import (
 )
 from langops.services import AlertNoiseReducer, RemediationRegistry
 from langops.services.jira_integration import JiraService
-from langops.storage.models import Base
 from langops.storage.sql import SqlDedupRepository, SqlRemediationRepository
 from langops.web.dependencies import (
     get_alert_dedup,
@@ -28,6 +24,8 @@ from langops.web.dependencies import (
     get_remediation_registry,
 )
 from langops.web.main import app
+
+from tests.system.conftest import create_sqlite_session
 
 
 def _make_mock_processor() -> MagicMock:
@@ -57,14 +55,7 @@ def _make_mock_processor() -> MagicMock:
 
 def _setup_overrides() -> None:
     """Set up all dependencies with SQLite storage and mocks."""
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(bind=engine)
-    sf = sessionmaker(bind=engine)
-
+    sf = create_sqlite_session()
     dedup_repo = SqlDedupRepository(sf)
     remediation_repo = SqlRemediationRepository(sf)
     dedup = AlertNoiseReducer(repo=dedup_repo, window_seconds=900, enabled=True)

@@ -1,27 +1,50 @@
 """System-level integration test fixtures.
 
-Real FastAPI app + mocked external dependencies (LLM, Prometheus, ChromaDB).
-Validates the full alert pipeline from HTTP request to response.
+Real FastAPI app + conditional real/mock external dependencies.
+When real credentials are configured (LLM, Langfuse), uses real services.
+Otherwise falls back to mocked processor for fast, isolated tests.
 """
 
 import os
+from collections.abc import Generator
+from unittest.mock import AsyncMock, MagicMock
 
-# ── Env vars before any langops import ──────────────────────────────
-os.environ.setdefault("LLM_API_KEY", "sk-test-system")
-os.environ.setdefault("LLM_MODEL", "gpt-4")
-os.environ.setdefault("LANGFUSE_PUBLIC_KEY", "pk-test-system")
-os.environ.setdefault("LANGFUSE_SECRET_KEY", "sk-lf-test-system")
-os.environ.setdefault("DEBUG", "true")
-os.environ.setdefault("LOG_LEVEL", "DEBUG")
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from collections.abc import Generator  # noqa: E402
-from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
+# ── Service detection (before any langops import) ───────────────────
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
+
+def _env_is_real(key: str, test_prefix: str) -> bool:
+    """Check if env var is set to a real (non-test) value."""
+    value = os.environ.get(key, "")
+    if not value:
+        return False
+    return not value.startswith(test_prefix)
+
+
+# Provide test defaults only for unconfigured vars.
+# Uses setdefault so real env vars / .env values take precedence.
+_ENV_DEFAULTS = {
+    "LLM_API_KEY": "sk-test-system",
+    "LLM_MODEL": "gpt-4",
+    "LANGFUSE_PUBLIC_KEY": "pk-test-system",
+    "LANGFUSE_SECRET_KEY": "sk-lf-test-system",
+    "DEBUG": "true",
+    "LOG_LEVEL": "DEBUG",
+}
+
+for _key, _default in _ENV_DEFAULTS.items():
+    os.environ.setdefault(_key, _default)
+
+# Detect available services
+USE_REAL_LLM = _env_is_real("LLM_API_KEY", "sk-test")
+USE_REAL_LANGFUSE = _env_is_real("LANGFUSE_PUBLIC_KEY", "pk-test")
+
+# ── Import langops modules (Settings initializes here) ──────────────
 
 from langops.agent.alert_processor import AlertProcessor  # noqa: E402
 from langops.models import (  # noqa: E402
@@ -41,9 +64,22 @@ from langops.web.dependencies import (  # noqa: E402
 from langops.web.main import app  # noqa: E402
 
 
-@pytest.fixture
-def mock_processor() -> MagicMock:
-    """Mock AlertProcessor that returns a realistic analysis result."""
+# ── Helpers ─────────────────────────────────────────────────────────
+
+
+def create_sqlite_session() -> sessionmaker:
+    """Create an in-memory SQLite session with all tables."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    return sessionmaker(bind=engine)
+
+
+def _make_mock_processor() -> MagicMock:
+    """Create a mock AlertProcessor with realistic return value."""
     processor = MagicMock(spec=AlertProcessor)
     processor.process = AsyncMock(
         return_value=AnalysisResult(
@@ -84,29 +120,56 @@ def mock_processor() -> MagicMock:
     return processor
 
 
-@pytest.fixture
-def client(mock_processor: MagicMock) -> Generator[TestClient, None, None]:
-    """TestClient with mocked processor and real SQLite storage."""
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(bind=engine)
-    sf = sessionmaker(bind=engine)
+def _create_real_processor() -> AlertProcessor:
+    """Create a real AlertProcessor using configured credentials."""
+    from langops.web.dependencies import get_langfuse, get_rca_engine, get_vector_store
 
+    return AlertProcessor(
+        langfuse=get_langfuse(),
+        rca_engine=get_rca_engine(),
+        vector_store=get_vector_store(),
+    )
+
+
+def _build_client(processor) -> Generator[TestClient, None, None]:
+    """Build a TestClient with the given processor and SQLite storage."""
+    sf = create_sqlite_session()
     dedup_repo = SqlDedupRepository(sf)
     remediation_repo = SqlRemediationRepository(sf)
     dedup = AlertNoiseReducer(repo=dedup_repo, window_seconds=900, enabled=True)
     remediation_registry = RemediationRegistry(repo=remediation_repo)
 
-    app.dependency_overrides[get_alert_processor] = lambda: mock_processor
+    app.dependency_overrides[get_alert_processor] = lambda: processor
     app.dependency_overrides[get_alert_dedup] = lambda: dedup
     app.dependency_overrides[get_remediation_registry] = lambda: remediation_registry
     try:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
         app.dependency_overrides.clear()
+
+
+# ── Fixtures ────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def mock_processor() -> MagicMock:
+    """Mock AlertProcessor — for tests that explicitly need mock behavior."""
+    return _make_mock_processor()
+
+
+@pytest.fixture
+def client() -> Generator[TestClient, None, None]:
+    """TestClient with conditional real/mock processor.
+
+    Uses real processor when LLM and Langfuse credentials are configured
+    (non-test values). Falls back to mock processor otherwise.
+    """
+    if USE_REAL_LLM and USE_REAL_LANGFUSE:
+        processor = _create_real_processor()
+    else:
+        processor = _make_mock_processor()
+
+    yield from _build_client(processor)
 
 
 # ── Sample alert payloads ───────────────────────────────────────────

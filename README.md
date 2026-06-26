@@ -112,19 +112,22 @@ make dev
 
 | 指令 | 说明 |
 |------|------|
-| `make setup` | 一键安装依赖 + 初始化数据库（首次使用） |
+| `make setup` | 一键安装依赖 + 初始化数据库（首次使用，`uv sync --dev`） |
 | `make up` | 启动全部 Docker 服务（Langfuse + Postgres + ChromaDB + Redis） |
 | `make up-light` | 轻量启动（仅 ChromaDB，用 SQLite 存储） |
+| `make down` | 仅停止 Docker 服务 |
+| `make install` | 创建 venv 并安装依赖（`uv sync --dev`） |
 | `make dev` | 启动开发服务器（热重载，debug 模式） |
 | `make server` | 启动生产服务器 |
-| `make stop` | 一键关闭全部服务（Docker + dev server） |
-| `make down` | 仅停止 Docker 服务 |
+| `make init-db` | 初始化 SQLite 数据库 |
+| `make init-knowledge` | 初始化 ChromaDB 知识库 |
 | `make test` | 运行全部测试 |
-| `make test-system` | 运行系统集成测试（输入校验 + 端到端 + 采集器 + 降噪） |
 | `make test-unit` | 运行单元测试 |
+| `make test-integration` | 运行集成测试 |
 | `make test-cov` | 运行测试并生成覆盖率报告 |
 | `make lint` | 静态检查（flake8 + mypy） |
 | `make format` | 格式化代码（black + isort） |
+| `make clean` | 清理缓存和临时文件 |
 | `make status` | 查看 Docker 服务状态 |
 | `make logs` | 查看 Docker 服务日志 |
 
@@ -452,9 +455,8 @@ make stop
 git checkout main && git pull
 git worktree add .worktrees/feat-taskN-xxx -b feat/taskN-xxx
 cd .worktrees/feat-taskN-xxx
-python3 -m venv venv && source venv/bin/activate
-pip install -e ".[dev]"
-pytest tests/ -q
+uv sync --dev
+uv run pytest tests/ -q
 ```
 
 ## 🛣️ 路线图
@@ -478,18 +480,20 @@ pytest tests/ -q
 - [x] 自然语言查询（NL2PromQL）
 - [x] 飞书/钉钉通知
 - [x] Web UI
+- [x] JIRA 工单集成
 
 ### Phase 3: 智能化（已完成）
 
 - [x] 预测性运维
 - [x] 告警降噪
 - [x] 自动修复建议执行（需人工审批）
+- [x] SQLAlchemy 持久化（SQLite/PostgreSQL）
 
 ### Phase 4: 生产化（规划中）
 
 - [ ] 认证与 RBAC
-- [ ] 降噪 / 修复计划持久化（Redis/DB）
-- [ ] JIRA 集成
+- [ ] 降噪 / 修复计划持久化（Redis）
+- [ ] Slack 通知扩展
 - [ ] Loki / K8s Events 采集扩展
 
 ## 📄 许可证

@@ -1,4 +1,4 @@
-.PHONY: help up up-light down stop install dev server test test-unit test-integration test-system test-cov lint format init-db init-knowledge clean status
+.PHONY: help up up-light down stop install dev server test test-unit test-integration test-system test-cov lint format init-db init-knowledge clean clean-py status
 
 PORT := 8000
 HOST := 0.0.0.0
@@ -58,22 +58,22 @@ init-knowledge: ## 初始化知识库 (写入故障案例到 ChromaDB)
 
 # ─── Testing ────────────────────────────────────────────────────────
 
-test: ## 运行全部测试
+test: clean-py ## 运行全部测试
 	uv run pytest tests/ -v
 
-test-unit: ## 运行单元测试
+test-unit: clean-py ## 运行单元测试
 	uv run pytest tests/unit/ -v
 
-test-integration: ## 运行集成测试
+test-integration: clean-py ## 运行集成测试
 	uv run pytest tests/integration/ -v
 
-test-system: ## 运行系统集成测试 (输入校验 + 端到端 + 采集器 + 降噪)
+test-system: clean-py ## 运行系统集成测试 (输入校验 + 端到端 + 采集器 + 降噪)
 	uv run pytest tests/system/ -v --tb=short
 
-test-system-verbose: ## 运行系统集成测试 (详细输出)
+test-system-verbose: clean-py ## 运行系统集成测试 (详细输出)
 	uv run pytest tests/system/ -v -s --tb=long
 
-test-cov: ## 运行测试并生成覆盖率报告
+test-cov: clean-py ## 运行测试并生成覆盖率报告
 	uv run pytest tests/ -v --cov=langops --cov-report=term-missing
 
 # ─── Code Quality ───────────────────────────────────────────────────
@@ -92,6 +92,11 @@ clean: ## 清理缓存和临时文件
 	rm -rf .mypy_cache .pytest_cache htmlcov .coverage
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+
+clean-py: ## 清理 Python 运行时产物 (__pycache__, .pyc, .egg-info)
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
 status: ## 查看 Docker 服务状态
 	docker compose ps

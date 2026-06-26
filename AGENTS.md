@@ -45,14 +45,16 @@
 ### 1.2 目录与文件约定
 
 ```
-src/
+src/langops/
 ├── core/           # config、exceptions、logging
-├── models/         # Pydantic 数据模型（Alert、AnalysisResult 等）
+├── models/         # Pydantic 数据模型（Alert、AnalysisResult、DedupInfo 等）
 ├── collectors/     # 数据采集器（BaseCollector + 具体实现）
 ├── agent/          # AlertProcessor、RCAEngine、prompts
 ├── knowledge/      # ChromaDB 向量存储封装
+├── services/       # 通知、JIRA、降噪、修复执行
+├── storage/        # SQLAlchemy 持久化（AlertRepository 等）
 ├── web/            # FastAPI app、api 路由、dependencies
-└── server.py       # uvicorn 入口
+└── server.py       # uvicorn 入口（python -m langops.server）
 
 tests/
 ├── conftest.py
@@ -60,7 +62,6 @@ tests/
 └── integration/    # API 与端到端流程
 
 config/
-├── application.yaml
 └── .env.example    # 环境变量模板（根目录 .env.example 同步维护）
 ```
 
@@ -526,8 +527,7 @@ git worktree add .worktrees/feat-task3-models -b feat/task3-models
 
 # 3. 进入隔离工作区并安装依赖
 cd .worktrees/feat-task3-models
-python3 -m venv venv && source venv/bin/activate
-pip install -e ".[dev]"
+uv sync --dev
 export LLM_API_KEY=sk-test LANGFUSE_PUBLIC_KEY=pk-test LANGFUSE_SECRET_KEY=sk-lf-test
 pytest tests/ -q   # 基线必须全绿
 
@@ -571,10 +571,10 @@ git branch -d feat/task3-models
 ```bash
 docker-compose up -d
 cp .env.example .env   # 填入密钥
-pip install -e ".[dev]"
-python -m langops.server
-pytest tests/unit -v
-black src/ tests/ && isort src/ tests/ && flake8 src/ && mypy src/
+uv sync --dev
+uv run langops.server
+uv run pytest tests/unit -v
+uv run black src/ tests/ && uv run isort src/ tests/ && uv run flake8 src/ && uv run mypy src/
 ```
 
 ---
