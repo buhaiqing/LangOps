@@ -5,8 +5,8 @@ can be swapped without changing calling code.
 """
 
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Optional
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from langops.models import Alert, AnalysisResult, RemediationPlan

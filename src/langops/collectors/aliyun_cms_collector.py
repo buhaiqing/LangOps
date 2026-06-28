@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from langops.collectors.base import BaseCollector
+from langops.collectors.base import COLLECTOR_RETRY, BaseCollector
 from langops.core import get_logger
 from langops.models import Alert
 
@@ -72,7 +72,8 @@ class AliyunCmsCollector(BaseCollector):
             logger.warning("Aliyun CMS health check failed", error=str(exc))
             return False
 
-    async def collect(
+    @COLLECTOR_RETRY
+    async def _do_collect(
         self,
         alert: Alert,
         time_window: timedelta = timedelta(minutes=30),
@@ -83,17 +84,9 @@ class AliyunCmsCollector(BaseCollector):
             return {"error": "Missing instance_id for Aliyun metrics"}
 
         resource_type = (alert.source.resource_type or "ecs").lower()
-        try:
-            if resource_type == "rds":
-                return await self.collect_rds_metrics(instance_id, time_window)
-            return await self.collect_ecs_metrics(instance_id, time_window)
-        except Exception as exc:
-            logger.error(
-                "Failed to collect Aliyun CMS metrics",
-                alert_id=alert.id,
-                error=str(exc),
-            )
-            return {"error": str(exc)}
+        if resource_type == "rds":
+            return await self.collect_rds_metrics(instance_id, time_window)
+        return await self.collect_ecs_metrics(instance_id, time_window)
 
     async def collect_ecs_metrics(
         self,

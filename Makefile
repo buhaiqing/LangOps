@@ -1,4 +1,4 @@
-.PHONY: help up up-light down stop install dev server test test-unit test-integration test-system test-cov lint format init-db init-knowledge clean clean-py status
+.PHONY: help up up-light down stop install dev server test test-unit test-integration test-system test-cov e2e e2e-verbose lint format init-db init-knowledge clean clean-py status
 
 PORT := 8000
 HOST := 0.0.0.0
@@ -67,6 +67,12 @@ test-unit: clean-py ## 运行单元测试
 test-integration: clean-py ## 运行集成测试
 	uv run pytest tests/integration/ -v
 
+test-webhooks: clean-py ## 运行 Webhook 回调集成测试 (AlertManager + 阿里云CMS)
+	uv run pytest tests/integration/test_webhook_alertmanager.py tests/integration/test_webhook_aliyun_cms.py -v --tb=short
+
+test-webhooks-verbose: clean-py ## 运行 Webhook 回调集成测试 (详细输出)
+	uv run pytest tests/integration/test_webhook_alertmanager.py tests/integration/test_webhook_aliyun_cms.py -v -s --tb=long
+
 test-system: clean-py ## 运行系统集成测试 (输入校验 + 端到端 + 采集器 + 降噪)
 	uv run pytest tests/system/ -v --tb=short
 
@@ -75,6 +81,18 @@ test-system-verbose: clean-py ## 运行系统集成测试 (详细输出)
 
 test-cov: clean-py ## 运行测试并生成覆盖率报告
 	uv run pytest tests/ -v --cov=langops --cov-report=term-missing
+
+# ─── E2E (零 Docker，自动启动/停止 server) ─────────────────────────
+
+e2e: clean-py ## E2E 端到端验证 (零 Docker，自动起停 server)
+	@echo "\n\033[36m═══ E2E 端到端集成测试 ═══\033[0m"
+	@echo "  模式: 本地文件 ChromaDB + SQLite (无需 Docker)"
+	@echo "  端口: 18100 (自动启动/停止)\n"
+	uv run pytest tests/e2e/ -v --tb=short
+
+e2e-verbose: clean-py ## E2E 端到端验证 (详细输出)
+	@echo "\n\033[36m═══ E2E 端到端集成测试 (verbose) ═══\033[0m"
+	uv run pytest tests/e2e/ -v -s --tb=long
 
 # ─── Code Quality ───────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 import asyncio
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from langops.core import get_logger
 from langops.models import (

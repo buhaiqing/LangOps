@@ -2,15 +2,14 @@
 
 import asyncio
 import json
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import create_engine, delete, desc, select
 from sqlalchemy.orm import Session, sessionmaker
 
 if TYPE_CHECKING:
-    from langops.models import AnalysisResult, RemediationPlan
+    from langops.models import Alert, AnalysisResult, RemediationPlan
 
 from langops.core import get_logger
 from langops.storage.base import (

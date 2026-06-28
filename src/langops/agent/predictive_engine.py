@@ -27,7 +27,7 @@ class PredictiveEngine:
     ) -> None:
         self.model = model
         self.step_hours = step_hours
-        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url) if api_key else None
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=60.0) if api_key else None
 
     async def predict_impact(
         self,

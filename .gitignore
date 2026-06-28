@@ -23,8 +23,11 @@ wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
+.flake8
 *.egg
 MANIFEST
+
+.langops/
 
 # PyInstaller
 #   Usually these files are written by a python script from a template

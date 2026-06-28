@@ -98,7 +98,10 @@ def test_root_endpoint(client: TestClient) -> None:
 def test_health_endpoint(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    data = response.json()
+    assert data["status"] in ("healthy", "degraded")
+    assert "checks" in data
+    assert "storage" in data["checks"]
 
 
 def test_alerts_health_endpoint(client: TestClient) -> None:

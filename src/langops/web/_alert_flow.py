@@ -82,10 +82,12 @@ async def process_one_alert(
             return AnalysisResponse(success=True, data=None, error=None, dedup=decision)
 
         result = await processor.process(alert)
+        # best-effort: persistence failure should not break the alert response
         await persist_alert_and_result(alert, result)
 
         plan_id = None
         if settings.remediation.enabled and result.suggestion.commands:
+            # best-effort: remediation plan failure should not break the alert response
             plan = await remediation_registry.create_from_analysis(result)
             plan_id = plan.plan_id
             remediation_plans_total.labels(risk_level=plan.risk_level).inc()

@@ -1,10 +1,12 @@
 """FastAPI dependencies."""
 
 from functools import lru_cache
+from typing import cast
 
 from langfuse import Langfuse
 
 from langops.adapters.alertmanager import AlertmanagerAdapter
+from langops.adapters.aliyun_cms import AliyunCmsWebhookAdapter
 from langops.agent import AlertProcessor, RCAEngine
 from langops.agent.nl_query_engine import NLQueryEngine
 from langops.agent.predictive_engine import PredictiveEngine
@@ -20,6 +22,8 @@ from langops.services import (
     RemediationRegistry,
 )
 from langops.storage import get_storage
+from fastapi import Request
+
 from langops.web._coalesce import CoalesceBuffer
 
 logger = get_logger(__name__)
@@ -185,12 +189,16 @@ def get_alertmanager_adapter() -> AlertmanagerAdapter:
     return AlertmanagerAdapter()
 
 
-def get_coalesce_buffer() -> CoalesceBuffer:
+@lru_cache
+def get_aliyun_cms_adapter() -> AliyunCmsWebhookAdapter:
+    """Stateless Aliyun Cloud Monitor callback adapter."""
+    return AliyunCmsWebhookAdapter()
+
+
+def get_coalesce_buffer(request: Request) -> CoalesceBuffer:
     """Return the CoalesceBuffer instance stored on ``app.state`` by lifespan.
 
     Tests inject their own buffer via ``app.dependency_overrides``; in production
     the lifespan handler in ``main.py`` sets ``app.state.coalesce_buffer`` once.
     """
-    from langops.web.main import app
-
-    return app.state.coalesce_buffer
+    return cast(CoalesceBuffer, request.app.state.coalesce_buffer)

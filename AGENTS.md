@@ -210,7 +210,8 @@ from langops.models import Alert
 - 格式：`<type>(<scope>): <subject>`（英文、祈使句、小写 subject）
 - type：`feat` | `fix` | `test` | `docs` | `refactor` | `chore`
 - 示例：`feat(collectors): add Prometheus collector with K8s metrics support`
-- **仅在被明确要求时** 执行 `git commit`；不提交 `.env` 或含密钥文件。
+- **Worktree 流程内的 `git commit` / `git merge` / `git push` 属于 5.1 流程本身的一部分,不需用户每次单独授权**;除此之外的提交仍需明确要求。
+- 不提交 `.env` 或含密钥文件。
 
 ---
 
@@ -508,13 +509,21 @@ results = await asyncio.gather(
 ### 5.1 实施 MVP 计划
 
 1. 阅读 [MVP 实现计划](docs/superpowers/plans/2026-06-25-langops-mvp-implementation.md) 当前 Task。
-2. **每个 Task 必须在独立 Git Worktree + 功能分支上开发**（禁止在 `main` 上直接改代码）。
+2. **每个新功能点都必须在独立 Git Worktree + 功能分支上开发**（禁止在 `main` 上直接改代码）；一个 Worktree 只承载一个功能点的所有变更。
+   - **「功能点」定义**：最小可独立合并并独立回滚的语义单元（通常对应 1 个 User Story 或 1.2 节的单个功能位次）。禁止把多个独立功能点的变更堆在同一个 Worktree / 分支里一起合并——这会让"独立复盘、独立回滚"成为空话。
+   - 本节是 1.1a Karpathy 编码准则中「目标驱动执行 + 外科手术式改动」在 Worktree 维度的落地。
 3. 严格按计划中的 **Files** 列表创建/修改文件。
-4. 完成 Task 内 **验证步骤**（运行测试、curl、脚本）后再进入下一 Task。
-5. Task 完成后：合并回 `main` → `git push origin main` → 删除 worktree 与功能分支。
-6. 遇阻塞（依赖缺失、测试持续失败、指令歧义）**停止并询问**，不猜测。
+4. 在 Worktree 内执行「**开发 → 测试 → 自我复盘 → 修复问题**」的循环：跑完测试后必须主动复盘代码与测试结果（设计合理性、边界用例、命名、可观测性、是否符合本规范第 1–4 节），把发现的问题在 Worktree 内修复后再跑一轮测试。**该循环需往复多次，直到自觉没有遗留问题为止**——不允许"测试一次通过就合并"。
+5. 合并需同时满足**客观门 + 自觉门**,缺一不可:
+   - **客观门**(必须全部满足):
+     - Worktree 内 `pytest` 全绿;
+     - `black` / `isort` / `flake8` / `mypy` 无新增错误;
+     - 5.2 自检清单逐项勾选通过。
+   - **自觉门**:对照 1.1 设计原则与 1.1a Karpathy 准则完成复盘,本轮已无明显遗留问题。
+   - 仅两扇门都通过后,才允许合并回 `main` → 在 main 上重跑 `pytest` 验证合并结果 → `git push origin main` → 删除 worktree 与功能分支。
+6. 遇阻塞（依赖缺失、测试持续失败、指令歧义、复盘发现无法自决的设计问题）**停止并询问**,不猜测。
 
-#### Git Worktree 标准流程（每个 Task 强制执行）
+#### Git Worktree 标准流程（每个新功能点强制执行）
 
 Worktree 目录：`.worktrees/<branch-slug>/`（已在 `.gitignore` 中忽略）
 
@@ -522,29 +531,40 @@ Worktree 目录：`.worktrees/<branch-slug>/`（已在 `.gitignore` 中忽略）
 # 1. 确保 main 最新
 git checkout main && git pull origin main
 
-# 2. 创建 worktree + 功能分支（示例：Task 3）
-git worktree add .worktrees/feat-task3-models -b feat/task3-models
+# 2. 创建 worktree + 功能分支（一个 worktree 仅承载一个功能点）
+#    slug 形如：<type>/<scope>-<short-name>，例：feat/models-pydantic、fix/collector-timeout
+git worktree add .worktrees/feat-models-pydantic -b feat/models-pydantic
 
 # 3. 进入隔离工作区并安装依赖
-cd .worktrees/feat-task3-models
+cd .worktrees/feat-models-pydantic
 uv sync --dev
 export LLM_API_KEY=sk-test LANGFUSE_PUBLIC_KEY=pk-test LANGFUSE_SECRET_KEY=sk-lf-test
 pytest tests/ -q   # 基线必须全绿
 
-# 4. 开发、测试、提交（在 worktree 内）
+# 4. 开发 → 测试 → 自我复盘 → 修复，往复循环，直到自觉无问题
+#    - 实现代码与对应测试（红-绿-重构，遵循 1.7 节 TDD）
+#    - pytest / black / isort / flake8 / mypy 全部通过
+#    - 自我复盘：对照 5.2 自检清单 + 1.1 设计原则，找出可优化点
+#    - 在同一 worktree 内修复问题、补测试，再跑一遍验证
+#    - 重复上述步骤，直到本轮已无明显遗留问题
 git add ... && git commit -m "feat(models): ..."
 
-# 5. 合并回 main 并推送
+# 5. 合并回 main 并推送（仅在客观门 + 自觉门都通过后执行）
 cd /path/to/LangOps   # 主工作区
-git checkout main && git merge feat/task3-models --no-edit
+git checkout main && git merge feat/models-pydantic --no-edit
+pytest tests/ -q      # 合并后再次验证（main 期间可能有他人合入,Worktree 内全绿不代表合并后仍全绿）
 git push origin main
 
 # 6. 清理
-git worktree remove .worktrees/feat-task3-models
-git branch -d feat/task3-models
+git worktree remove .worktrees/feat-models-pydantic
+git branch -d feat/models-pydantic
 ```
 
-**分支命名**：`feat/task<N>-<short-name>`（如 `feat/task3-models`、`feat/task4-collectors`）。
+**分支命名**：`<type>/<scope>-<short-name>`，其中 `type` 取 `feat` / `fix` / `refactor` / `test` / `docs` / `chore`；例：`feat/models-pydantic`、`fix/collector-timeout`、`feat/agent-rca-engine`。
+- 这是 **git branch 名**,与 1.3 节 commit message 的 `<type>(<scope>): <subject>` 是两套独立规范:branch 用 `/` 分隔,commit message 用 `()` 包裹 scope。
+- 例:`branch: feat/collector-timeout` → 对应 commit: `fix(collector): add timeout for prometheus queries`。
+
+**Worktree 颗粒度**：一个 Worktree + 一个分支 = 一个功能点；不允许把多个独立功能点的变更堆在同一个 Worktree / 分支里一起合并。
 
 ### 5.2 代码审查自检清单
 

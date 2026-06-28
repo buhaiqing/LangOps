@@ -37,7 +37,7 @@ class NLQueryEngine:
         available_metrics: list[str] | None = None,
         base_url: str | None = None,
     ) -> None:
-        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self.model = model
         self.temperature = temperature
         self.prometheus_collector = prometheus_collector

@@ -1,5 +1,6 @@
 """Alert Processor - Main orchestrator for alert analysis."""
 
+import asyncio
 import time
 from datetime import timedelta
 
@@ -65,15 +66,25 @@ class AlertProcessor:
             logger.info("Starting alert processing", alert_id=alert.id, title=alert.title)
 
             try:
-                context = await self._collect_context(alert)
-                root_cause = await self._analyze_root_cause(alert, context)
-                similar_cases = await self._retrieve_similar_cases(alert)
-                suggestion = await self._generate_remediation(
-                    root_cause,
-                    similar_cases,
-                    alert,
+                # Phase 1 — independent: collect context + retrieve similar cases
+                context_task = asyncio.create_task(self._collect_context(alert))
+                similar_cases_task = asyncio.create_task(
+                    self._retrieve_similar_cases(alert)
                 )
-                impact_prediction = await self._predict_impact(alert, context, root_cause)
+
+                context = await context_task
+                root_cause = await self._analyze_root_cause(alert, context)
+
+                # Phase 2 — parallel: remediation (needs root_cause + similar_cases)
+                # and impact_prediction (needs root_cause + context)
+                similar_cases = await similar_cases_task
+                (
+                    suggestion,
+                    impact_prediction,
+                ) = await asyncio.gather(
+                    self._generate_remediation(root_cause, similar_cases, alert),
+                    self._predict_impact(alert, context, root_cause),
+                )
 
                 processing_time = time.time() - start_time
                 trace_id = self.langfuse.get_current_trace_id() or f"local-{alert.id}"
@@ -118,6 +129,7 @@ class AlertProcessor:
     async def _collect_context(self, alert: Alert) -> AlertContext:
         """Collect context data for the alert."""
         context = AlertContext(alert=alert)
+        context.metrics = {}
 
         if self.prometheus_collector and alert.source.type == "kubernetes":
             try:
@@ -125,7 +137,7 @@ class AlertProcessor:
                     alert,
                     time_window=timedelta(minutes=30),
                 )
-                context.metrics = metrics
+                context.metrics["prometheus"] = metrics
                 logger.info(
                     "Collected Prometheus metrics",
                     alert_id=alert.id,
@@ -137,7 +149,7 @@ class AlertProcessor:
                     alert_id=alert.id,
                     error=str(exc),
                 )
-                context.metrics = {"error": str(exc)}
+                context.metrics["prometheus"] = {"error": str(exc)}
 
         if self.aliyun_collector and alert.source.type == "aliyun":
             try:
@@ -145,7 +157,7 @@ class AlertProcessor:
                     alert,
                     time_window=timedelta(minutes=30),
                 )
-                context.metrics = metrics
+                context.metrics["aliyun_cms"] = metrics
                 logger.info(
                     "Collected Aliyun CMS metrics",
                     alert_id=alert.id,
@@ -157,7 +169,7 @@ class AlertProcessor:
                     alert_id=alert.id,
                     error=str(exc),
                 )
-                context.metrics = {"error": str(exc)}
+                context.metrics["aliyun_cms"] = {"error": str(exc)}
 
         context.logs = []
         context.events = []

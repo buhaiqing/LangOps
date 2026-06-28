@@ -262,7 +262,10 @@ class TestHealthEndpoints:
     def test_health(self, client: TestClient) -> None:
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        data = response.json()
+        assert data["status"] in ("healthy", "degraded")
+        assert "checks" in data
+        assert "storage" in data["checks"]
 
     def test_alerts_health(self, client: TestClient) -> None:
         response = client.get("/api/v1/alerts/health")

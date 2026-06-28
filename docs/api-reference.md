@@ -123,13 +123,13 @@ langops_alerts_received_total{severity="critical",category="resource"} 1
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `type` | string | ✅ | `kubernetes` \| `aliyun` \| `prometheus` |
+| `type` | string | ✅ | `kubernetes` \| `aliyun` \| `prometheus`（Webhook 固定为 `prometheus`） |
 | `system` | string | ✅ | 集群名或地域（如 `prod-cluster`、`cn-hangzhou`） |
 | `service` | string | — | 服务名 |
 | `namespace` | string | — | K8s 命名空间 |
 | `pod_name` | string | — | K8s Pod 名称 |
-| `instance_id` | string | — | 云实例 ID（ECS/RDS/SLB） |
-| `resource_type` | string | — | 云资源类型：`ecs` \| `rds` \| `slb` |
+| `instance_id` | string | — | 云实例 ID（ECS/RDS/SLB 的实例标识） |
+| `resource_type` | string | — | 云资源类型：`ecs` \| `rds` \| `slb`；K8s 告警可省略 |
 
 ### curl 示例
 
@@ -181,6 +181,31 @@ curl -s -X POST http://localhost:8000/api/v1/alerts \
     },
     "metric_data": {
       "cpu_usage_percent": 93.2
+    }
+  }' | jq .
+```
+
+**阿里云 RDS 告警**
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/alerts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "RDS 连接数使用率过高",
+    "description": "RDS 实例连接数使用率超过 85%，接近上限",
+    "severity": "high",
+    "category": "availability",
+    "source": {
+      "type": "aliyun",
+      "system": "cn-hangzhou",
+      "instance_id": "rm-bp1example0002",
+      "resource_type": "rds",
+      "service": "order-db"
+    },
+    "metric_data": {
+      "ConnectionUsage": 87.3,
+      "CpuUsage": 45.2,
+      "MemoryUsage": 62.1
     }
   }' | jq .
 ```
@@ -440,7 +465,7 @@ curl -s -X POST http://localhost:8000/api/v1/query \
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `resource_type` | string | — | `"kubernetes"` | `kubernetes` \| `ecs` \| `rds` |
-| `system` | string | — | `"prod-cluster"` | 集群名或地域 |
+| `system` | string | — | `"prod-cluster"` | 集群名（K8s）或阿里云地域（如 `cn-hangzhou`） |
 | `namespace` | string | — | `null` | K8s 命名空间 |
 | `pod_name` | string | — | `null` | K8s Pod 名称 |
 | `instance_id` | string | — | `null` | 云实例 ID |
@@ -473,6 +498,21 @@ curl -s -X POST http://localhost:8000/api/v1/predict \
     "system": "cn-hangzhou",
     "instance_id": "i-bp1example0001",
     "horizon_hours": 48
+  }' | jq .
+```
+
+**阿里云 RDS 预测**
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource_type": "rds",
+    "system": "cn-hangzhou",
+    "instance_id": "rm-bp1example0002",
+    "service": "order-db",
+    "horizon_hours": 24,
+    "thresholds": {"ConnectionUsage": 0.8, "CpuUsage": 0.85}
   }' | jq .
 ```
 

@@ -38,7 +38,7 @@ def _build_description(
 
     parts: list[str] = [
         "h2. Alert Information\n",
-        f"| *Field* | *Value* |",
+        "| *Field* | *Value* |",
         f"| Alert ID | {alert_id} |",
         f"| Severity | {severity} |",
         f"| Category | {category} |",

@@ -17,7 +17,7 @@ class RCAEngine:
     """Root Cause Analysis Engine using LLM."""
 
     def __init__(self, api_key: str, model: str = "gpt-4", temperature: float = 0.2, base_url: str | None = None) -> None:
-        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=60.0)
         self.model = model
         self.temperature = temperature
 

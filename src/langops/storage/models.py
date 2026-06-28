@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase
 
 

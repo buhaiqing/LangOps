@@ -1,5 +1,6 @@
 """FastAPI application."""
 
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -122,9 +123,61 @@ def create_app() -> FastAPI:
             return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
-        """Health check endpoint."""
-        return {"status": "healthy", "version": "0.1.0"}
+    async def health() -> dict[str, Any]:
+        """Deep health check endpoint — probes all configured downstream dependencies."""
+
+        checks: dict[str, dict[str, Any]] = {}
+        overall_status = "healthy"
+
+        # Storage probe
+        try:
+            t0 = time.time()
+            storage = await get_storage()
+            await storage.alerts.count()
+            checks["storage"] = {
+                "status": "up",
+                "latency_ms": int((time.time() - t0) * 1000),
+            }
+        except Exception as exc:
+            checks["storage"] = {"status": "down", "latency_ms": None, "error": str(exc)}
+            overall_status = "unhealthy"
+
+        # Prometheus probe (best-effort)
+        try:
+            t0 = time.time()
+            collector = get_alert_processor().prometheus_collector
+            if collector:
+                healthy = await collector.health_check()
+                checks["prometheus"] = {
+                    "status": "up" if healthy else "down",
+                    "latency_ms": int((time.time() - t0) * 1000),
+                }
+                if not healthy and overall_status != "unhealthy":
+                    overall_status = "degraded"
+            else:
+                checks["prometheus"] = {"status": "unconfigured", "latency_ms": None}
+        except Exception as exc:
+            checks["prometheus"] = {"status": "down", "latency_ms": None, "error": str(exc)}
+            if overall_status != "unhealthy":
+                overall_status = "degraded"
+
+        # ChromaDB probe (best-effort)
+        try:
+            from langops.web.dependencies import get_vector_store
+
+            t0 = time.time()
+            vs = get_vector_store()
+            await vs.client.heartbeat()
+            checks["vectordb"] = {
+                "status": "up",
+                "latency_ms": int((time.time() - t0) * 1000),
+            }
+        except Exception as exc:
+            checks["vectordb"] = {"status": "down", "latency_ms": None, "error": str(exc)}
+            if overall_status != "unhealthy":
+                overall_status = "degraded"
+
+        return {"status": overall_status, "version": "0.1.0", "checks": checks}
 
     @app.get("/metrics")
     async def metrics() -> Response:

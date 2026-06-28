@@ -5,7 +5,7 @@ from typing import Any
 
 import aiohttp
 
-from langops.collectors.base import BaseCollector
+from langops.collectors.base import COLLECTOR_RETRY, BaseCollector
 from langops.core import get_logger
 from langops.models import Alert
 
@@ -43,22 +43,16 @@ class PrometheusCollector(BaseCollector):
             logger.warning("Prometheus health check failed", error=str(exc))
             return False
 
-    async def collect(
+    @COLLECTOR_RETRY
+    async def _do_collect(
         self,
         alert: Alert,
         time_window: timedelta = timedelta(minutes=30),
     ) -> dict[str, Any]:
         """Collect Prometheus metrics for an alert."""
-        results: dict[str, Any] = {}
-        try:
-            if alert.source.type == "kubernetes":
-                results = await self._collect_k8s_metrics(alert, time_window)
-            else:
-                results = await self._collect_generic_metrics(alert, time_window)
-        except Exception as exc:
-            logger.error("Failed to collect Prometheus metrics", alert_id=alert.id, error=str(exc))
-            results["error"] = str(exc)
-        return results
+        if alert.source.type == "kubernetes":
+            return await self._collect_k8s_metrics(alert, time_window)
+        return await self._collect_generic_metrics(alert, time_window)
 
     async def _collect_k8s_metrics(
         self,
