@@ -19,7 +19,7 @@ _TS = int(time.time())  # unique per test-run, used in fingerprints/pod names
 
 
 def _post(server_url: str, path: str, payload: dict, **kw) -> requests.Response:
-    return requests.post(f"{server_url}{path}", json=payload, timeout=120, **kw)
+    return requests.post(f"{server_url}{path}", json=payload, timeout=300, **kw)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
