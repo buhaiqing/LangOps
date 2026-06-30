@@ -77,14 +77,6 @@ class VectorStoreSettings(BaseSettings):
     persist_directory: str | None = Field(default=None)
 
 
-class RedisSettings(BaseSettings):
-    """Redis configuration."""
-
-    model_config = _env_config("REDIS_")
-
-    url: str = Field(default="redis://localhost:6379")
-
-
 class FeishuSettings(BaseSettings):
     """Feishu notification configuration."""
 
@@ -164,6 +156,7 @@ class WebhookSettings(BaseSettings):
     audit_log_path: str = Field(default="logs/langops-audit.log", description="Audit log file path")
     audit_log_retention_days: int = Field(default=7, ge=1, le=90, description="Audit log retention days")
     coalesce_max_buffered_alerts: int = Field(default=500, ge=10, le=10_000, description="Coalesce buffer cap")
+    concurrency: int = Field(default=10, ge=1, le=100, description="Webhook processing concurrency limit")
 
 
 class Settings(BaseSettings):
@@ -192,7 +185,7 @@ class Settings(BaseSettings):
     prometheus: PrometheusSettings = Field(default_factory=PrometheusSettings)
     aliyun: AliyunSettings = Field(default_factory=AliyunSettings)
     vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
-    redis: RedisSettings = Field(default_factory=RedisSettings)
+
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)
     wechat_work: WechatWorkSettings = Field(default_factory=WechatWorkSettings)
@@ -224,7 +217,6 @@ class Settings(BaseSettings):
             PrometheusSettings,
             AliyunSettings,
             VectorStoreSettings,
-            RedisSettings,
             FeishuSettings,
             DingtalkSettings,
             WechatWorkSettings,
@@ -276,7 +268,6 @@ def _factory_to_field_name(factory: type[BaseSettings]) -> str:
         PrometheusSettings: "prometheus",
         AliyunSettings: "aliyun",
         VectorStoreSettings: "vector_store",
-        RedisSettings: "redis",
         FeishuSettings: "feishu",
         DingtalkSettings: "dingtalk",
         WechatWorkSettings: "wechat_work",

@@ -104,12 +104,6 @@ def test_health_endpoint(client: TestClient) -> None:
     assert "storage" in data["checks"]
 
 
-def test_alerts_health_endpoint(client: TestClient) -> None:
-    response = client.get("/api/v1/alerts/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
-
-
 def test_create_alert_success(client: TestClient, mock_processor: MagicMock) -> None:
     payload = {
         "title": "CPU使用率过高",

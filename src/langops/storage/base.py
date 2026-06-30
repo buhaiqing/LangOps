@@ -26,11 +26,6 @@ class AlertRepository(ABC):
         ...
 
     @abstractmethod
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        """Return alerts in reverse-chronological order."""
-        ...
-
-    @abstractmethod
     async def count(self) -> int:
         """Total number of stored alerts."""
         ...
@@ -44,15 +39,7 @@ class AnalysisRepository(ABC):
         """Store an analysis result."""
         ...
 
-    @abstractmethod
-    async def get_by_alert(self, alert_id: str) -> dict | None:
-        """Get analysis result for a specific alert."""
-        ...
 
-    @abstractmethod
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        """Return analyses in reverse-chronological order."""
-        ...
 
 
 class DedupRepository(ABC):
@@ -111,10 +98,7 @@ class RemediationRepository(ABC):
         """Return all plans in PENDING_APPROVAL status."""
         ...
 
-    @abstractmethod
-    async def list_recent(self, limit: int = 50) -> list[dict]:
-        """Return plans in reverse-chronological order."""
-        ...
+
 
 
 class Storage(ABC):

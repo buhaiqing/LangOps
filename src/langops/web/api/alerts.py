@@ -73,11 +73,4 @@ async def dedup_stats(dedup: AlertNoiseReducer = Depends(get_alert_dedup)) -> di
     return await dedup.stats()
 
 
-@router.get(
-    "/health",
-    summary="Health check",
-    description="Check if the alert service is healthy.",
-)
-async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "alerts"}
+

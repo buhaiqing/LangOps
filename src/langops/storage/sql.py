@@ -72,20 +72,6 @@ class SqlAlertRepository(AlertRepository):
     async def get(self, alert_id: str) -> dict | None:
         return await asyncio.to_thread(self._sync_get_alert, alert_id)
 
-    def _sync_list_alerts(self, limit, offset):
-        with self._session_factory() as session:
-            stmt = (
-                select(AlertRecord)
-                .order_by(desc(AlertRecord.created_at))
-                .offset(offset)
-                .limit(limit)
-            )
-            rows = session.execute(stmt).scalars().all()
-            return [self._to_dict(r) for r in rows]
-
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        return await asyncio.to_thread(self._sync_list_alerts, limit, offset)
-
     def _sync_count_alerts(self):
         with self._session_factory() as session:
             return session.query(AlertRecord).count()
@@ -141,22 +127,6 @@ class SqlAnalysisRepository(AnalysisRepository):
     async def save(self, result: "AnalysisResult") -> None:
         await asyncio.to_thread(self._sync_save, result)
 
-    def _sync_get_by_alert(self, alert_id):
-        with self._session_factory() as session:
-            stmt = (
-                select(AnalysisRecord)
-                .where(AnalysisRecord.alert_id == alert_id)
-                .order_by(desc(AnalysisRecord.created_at))
-                .limit(1)
-            )
-            record = session.execute(stmt).scalar_one_or_none()
-            if record is None:
-                return None
-            return self._to_dict(record)
-
-    async def get_by_alert(self, alert_id: str) -> dict | None:
-        return await asyncio.to_thread(self._sync_get_by_alert, alert_id)
-
     def _sync_list_recent(self, limit, offset):
         with self._session_factory() as session:
             stmt = (
@@ -167,9 +137,6 @@ class SqlAnalysisRepository(AnalysisRepository):
             )
             rows = session.execute(stmt).scalars().all()
             return [self._to_dict(r) for r in rows]
-
-    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[dict]:
-        return await asyncio.to_thread(self._sync_list_recent, limit, offset)
 
     @staticmethod
     def _to_dict(record: AnalysisRecord) -> dict:
@@ -331,17 +298,6 @@ class SqlRemediationRepository(RemediationRepository):
 
     async def list_pending(self) -> list[dict]:
         return await asyncio.to_thread(self._sync_list_pending)
-
-    def _sync_list_recent(self, limit):
-        with self._session_factory() as session:
-            stmt = (
-                select(RemediationRecord).order_by(desc(RemediationRecord.created_at)).limit(limit)
-            )
-            rows = session.execute(stmt).scalars().all()
-            return [self._to_dict(r) for r in rows]
-
-    async def list_recent(self, limit: int = 50) -> list[dict]:
-        return await asyncio.to_thread(self._sync_list_recent, limit)
 
     @staticmethod
     def _to_dict(record: RemediationRecord) -> dict:

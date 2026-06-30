@@ -97,35 +97,6 @@ class TestSqlAlertRepository:
         assert await alert_repo.get("nonexistent") is None
 
     @pytest.mark.asyncio
-    async def test_list_recent_ordering(self, alert_repo):
-        now = datetime.now(UTC)
-        alert_old = Alert(
-            id="a-old",
-            title="old",
-            description="d",
-            severity=AlertSeverity.LOW,
-            category=AlertCategory.RESOURCE,
-            source=AlertSource(type="k8s", system="s"),
-            timestamp=now - timedelta(hours=1),
-            metric_data={},
-        )
-        alert_new = Alert(
-            id="a-new",
-            title="new",
-            description="d",
-            severity=AlertSeverity.HIGH,
-            category=AlertCategory.RESOURCE,
-            source=AlertSource(type="k8s", system="s"),
-            timestamp=now,
-            metric_data={},
-        )
-        await alert_repo.save(alert_old)
-        await alert_repo.save(alert_new)
-        rows = await alert_repo.list_recent(limit=10)
-        assert len(rows) == 2
-        assert rows[0]["id"] == "a-new"
-
-    @pytest.mark.asyncio
     async def test_count(self, alert_repo):
         assert await alert_repo.count() == 0
         alert = Alert(
@@ -143,47 +114,6 @@ class TestSqlAlertRepository:
 
 
 # ── AnalysisRepository ───────────────────────────────────────────────
-
-
-class TestSqlAnalysisRepository:
-
-    @pytest.mark.asyncio
-    async def test_save_and_get_by_alert(self, analysis_repo):
-        result = AnalysisResult(
-            alert_id="a1",
-            trace_id="t1",
-            root_cause=RootCause(category="资源不足", description="CPU不足", confidence=0.9),
-            suggestion=RemediationSuggestion(summary="扩容"),
-            similar_cases=[],
-            impact_prediction={"risk": "high"},
-            processing_time_seconds=2.5,
-        )
-        await analysis_repo.save(result)
-        stored = await analysis_repo.get_by_alert("a1")
-        assert stored is not None
-        assert stored["trace_id"] == "t1"
-        assert stored["root_cause"]["category"] == "资源不足"
-        assert stored["processing_time"] == 2.5
-
-    @pytest.mark.asyncio
-    async def test_get_by_alert_missing(self, analysis_repo):
-        assert await analysis_repo.get_by_alert("no-such") is None
-
-    @pytest.mark.asyncio
-    async def test_list_recent(self, analysis_repo):
-        for i in range(5):
-            result = AnalysisResult(
-                alert_id=f"a{i}",
-                trace_id=f"t{i}",
-                root_cause=RootCause(category="test", description="d", confidence=0.5),
-                suggestion=RemediationSuggestion(summary="s"),
-                similar_cases=[],
-                impact_prediction={},
-                processing_time_seconds=1.0,
-            )
-            await analysis_repo.save(result)
-        rows = await analysis_repo.list_recent(limit=3)
-        assert len(rows) == 3
 
 
 # ── DedupRepository ──────────────────────────────────────────────────
@@ -347,19 +277,9 @@ class TestErrorHandling:
         await remediation_repo.update_status("nonexistent", "executed")
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_analysis(self, analysis_repo):
-        result = await analysis_repo.get_by_alert("nonexistent")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_get_nonexistent_remediation(self, remediation_repo):
         result = await remediation_repo.get("nonexistent")
         assert result is None
-
-    @pytest.mark.asyncio
-    async def test_list_recent_empty(self, alert_repo):
-        result = await alert_repo.list_recent(limit=10)
-        assert result == []
 
     @pytest.mark.asyncio
     async def test_list_pending_empty(self, remediation_repo):
