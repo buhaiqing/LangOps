@@ -21,6 +21,7 @@ from langops.models import (
     AlertSeverity,
     AlertSource,
     AnalysisResult,
+    DedupInfo,
     RemediationSuggestion,
     RootCause,
 )
@@ -28,6 +29,7 @@ from langops.services import AlertNoiseReducer, JiraService, RemediationRegistry
 from langops.storage.models import Base
 from langops.storage.sql import SqlDedupRepository, SqlRemediationRepository
 from langops.web._alert_flow import process_one_alert
+from langops.web.api.webhooks import _gather_process
 
 
 def _dedup_repo():
@@ -262,3 +264,82 @@ def test_process_one_alert_records_audit_failure_event(
     assert record["decision"] == "failure"
     assert record["webhook_source"] == "alertmanager"
     assert "boom" in record.get("error", "")
+
+
+# ─── concurrency limit in _gather_process ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_gather_process_respects_concurrency_limit(monkeypatch) -> None:
+    """_gather_process must not run more than concurrency tasks simultaneously."""
+    from langops.core import settings
+
+    CONCURRENCY = 5
+    BATCH_SIZE = 20
+
+    monkeypatch.setattr(settings.webhook, "concurrency", CONCURRENCY)
+
+    processor = MagicMock()
+
+    async def _slow_process(alert: object) -> object:
+        await asyncio.sleep(0.05)
+        return AnalysisResult(
+            alert_id=getattr(alert, "id", "test-id"),
+            trace_id="trace-concurrency-test",
+            root_cause=RootCause(category="test", description="test", confidence=0.5),
+            suggestion=RemediationSuggestion(summary="test", steps=[], commands=[]),
+            processing_time_seconds=0.01,
+        )
+
+    processor.process = _slow_process
+
+    dedup = MagicMock()
+    dedup.evaluate = AsyncMock(
+        return_value=DedupInfo(
+            action="process",
+            fingerprint="fp-test",
+            occurrence_count=1,
+            window_seconds=900,
+            message="first",
+        )
+    )
+    remediation_registry = MagicMock()
+    remediation_registry.create_from_analysis = AsyncMock(
+        return_value=MagicMock(plan_id="plan-test", risk_level="low")
+    )
+    jira = JiraService(url="", username="", api_token="", enabled=False)
+
+    alerts = [
+        AlertCreate(
+            title=f"alert-{i}",
+            description=f"test {i}",
+            severity=AlertSeverity.CRITICAL,
+            category=AlertCategory.RESOURCE,
+            source=AlertSource(type="prometheus", system="test"),
+        )
+        for i in range(BATCH_SIZE)
+    ]
+
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    results = await _gather_process(
+        alerts,
+        processor,
+        dedup,
+        remediation_registry,
+        jira,
+        audit=None,
+    )
+    elapsed = loop.time() - start
+
+    assert len(results) == BATCH_SIZE
+    assert all(r.success for r in results)
+
+    # With CONCURRENCY=5 and BATCH_SIZE=20, each taking 0.05s:
+    #   without concurrency limit: ≈0.05s  (all 20 in parallel)
+    #   with concurrency limit:   ≥(20/5)*0.05 = 0.20s
+    # Add generous slack for CI variability.
+    assert elapsed >= 0.15, (
+        f"concurrency={CONCURRENCY}, batch={BATCH_SIZE}: "
+        f"elapsed={elapsed:.3f}s — expected ≥0.15s"
+    )

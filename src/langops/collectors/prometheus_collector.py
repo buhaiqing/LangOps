@@ -50,7 +50,7 @@ class PrometheusCollector(BaseCollector):
         time_window: timedelta = timedelta(minutes=30),
     ) -> dict[str, Any]:
         """Collect Prometheus metrics for an alert."""
-        if alert.source.type == "kubernetes":
+        if alert.source.type in ("prometheus", "kubernetes"):
             return await self._collect_k8s_metrics(alert, time_window)
         return await self._collect_generic_metrics(alert, time_window)
 

@@ -13,7 +13,7 @@ from langops.adapters.aliyun_cms import AliyunCmsWebhookAdapter
 from langops.agent import AlertProcessor
 from langops.core import get_logger, settings
 from langops.core.audit import AuditLogger
-from langops.models import AlertCreate
+from langops.models import AlertCreate, AnalysisResponse
 from langops.models.webhook import (
     AlertmanagerWebhookPayload,
     AliyunCmsCallbackPayload,
@@ -193,20 +193,25 @@ async def _gather_process(
 
     ``process_one_alert`` is contractually total — it converts exceptions into
     ``AnalysisResponse(success=False)`` — so plain ``gather`` is safe here.
+
+    Concurrency is capped via :attr:`settings.webhook.concurrency` to prevent
+    resource exhaustion from too many parallel LLM / collector calls.
     """
-    coros = [
-        process_one_alert(
-            ac,
-            processor,
-            dedup,
-            remediation_registry,
-            jira,
-            webhook_source=webhook_source,
-            audit=audit,
-        )
-        for ac in alert_creates
-    ]
-    responses = await asyncio.gather(*coros)
+    sem = asyncio.Semaphore(settings.webhook.concurrency)
+
+    async def _run_one(ac: AlertCreate) -> AnalysisResponse:
+        async with sem:
+            return await process_one_alert(
+                ac,
+                processor,
+                dedup,
+                remediation_registry,
+                jira,
+                webhook_source=webhook_source,
+                audit=audit,
+            )
+
+    responses = await asyncio.gather(*[_run_one(ac) for ac in alert_creates])
     return [
         WebhookAlertResult(
             alert_id=r.data.alert_id if r.data else None,
@@ -283,7 +288,12 @@ async def aliyun_cms_webhook(
     webhook_alerts_received_total.labels(webhook_source=CMS_SOURCE).inc()
 
     results = await _gather_process(
-        [alert_create], processor, dedup, remediation_registry, jira, audit,
+        [alert_create],
+        processor,
+        dedup,
+        remediation_registry,
+        jira,
+        audit,
         webhook_source=CMS_SOURCE,
     )
 

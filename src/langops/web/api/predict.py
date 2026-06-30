@@ -1,6 +1,7 @@
 """Predictive operations API routes."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, status
 
@@ -55,9 +56,9 @@ async def _collect_metrics(
     request: PredictRequest,
     prometheus: PrometheusCollector | None,
     aliyun: AliyunCmsCollector | None,
-) -> dict:
+) -> dict[str, Any]:
     alert = _alert_from_request(request)
-    if alert.source.type == "kubernetes" and prometheus:
+    if alert.source.type in ("prometheus", "kubernetes") and prometheus:
         return await prometheus.collect(alert, time_window=timedelta(hours=6))
     if alert.source.type == "aliyun" and aliyun:
         return await aliyun.collect(alert, time_window=timedelta(hours=6))

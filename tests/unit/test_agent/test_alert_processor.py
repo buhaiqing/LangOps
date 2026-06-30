@@ -217,3 +217,90 @@ async def test_retrieve_similar_cases_returns_empty_on_search_failure(
     cases = await processor._retrieve_similar_cases(_alert())
 
     assert cases == []
+
+
+def _prometheus_alert() -> Alert:
+    """Alert with source.type='prometheus' (as set by AlertmanagerAdapter)."""
+    return Alert(
+        id="alert-prom",
+        title="CPU使用率过高",
+        description="CPU > 90%",
+        severity=AlertSeverity.CRITICAL,
+        category=AlertCategory.RESOURCE,
+        source=AlertSource(
+            type="prometheus",
+            system="prom-prod",
+            namespace="production",
+            pod_name="order-pod",
+            service="order",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_collects_prometheus_metrics_for_prometheus_source() -> None:
+    """source.type='prometheus' should trigger Prometheus metric collection."""
+    langfuse = MagicMock()
+    langfuse.get_current_trace_id.return_value = "trace-prom"
+
+    rca_engine = MagicMock()
+    rca_engine.analyze = AsyncMock(
+        return_value=RootCause(category="资源不足", description="CPU 过高", confidence=0.9)
+    )
+    rca_engine.generate_remediation = AsyncMock(
+        return_value=RemediationSuggestion(summary="扩容", steps=["step1"])
+    )
+
+    vector_store = MagicMock()
+    vector_store.search = AsyncMock(return_value=[])
+
+    prometheus = MagicMock()
+    prometheus.collect = AsyncMock(return_value={"cpu_usage": {"status": "success"}})
+
+    processor = AlertProcessor(
+        langfuse=langfuse,
+        rca_engine=rca_engine,
+        vector_store=vector_store,
+        prometheus_collector=prometheus,
+    )
+
+    await processor.process(_prometheus_alert())
+    prometheus.collect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_collects_prometheus_but_not_aliyun_for_prometheus_source() -> None:
+    """source.type='prometheus' should trigger Prometheus collector but NOT
+    Aliyun CMS collector — both collectors are injected but only Prometheus
+    one is expected to be called."""
+    langfuse = MagicMock()
+    langfuse.get_current_trace_id.return_value = "trace-prom-only"
+
+    rca_engine = MagicMock()
+    rca_engine.analyze = AsyncMock(
+        return_value=RootCause(category="资源不足", description="CPU 过高", confidence=0.9)
+    )
+    rca_engine.generate_remediation = AsyncMock(
+        return_value=RemediationSuggestion(summary="扩容", steps=["step1"])
+    )
+
+    vector_store = MagicMock()
+    vector_store.search = AsyncMock(return_value=[])
+
+    prometheus = MagicMock()
+    prometheus.collect = AsyncMock(return_value={"cpu_usage": {"status": "success"}})
+
+    aliyun = MagicMock()
+    aliyun.collect = AsyncMock(return_value={"CPUUtilization": {"status": "success"}})
+
+    processor = AlertProcessor(
+        langfuse=langfuse,
+        rca_engine=rca_engine,
+        vector_store=vector_store,
+        prometheus_collector=prometheus,
+        aliyun_collector=aliyun,
+    )
+
+    await processor.process(_prometheus_alert())
+    prometheus.collect.assert_awaited_once()
+    aliyun.collect.assert_not_awaited()

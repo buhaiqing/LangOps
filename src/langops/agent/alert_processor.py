@@ -3,6 +3,7 @@
 import asyncio
 import time
 from datetime import timedelta
+from typing import Any
 
 from langfuse import Langfuse, observe, propagate_attributes
 
@@ -68,9 +69,7 @@ class AlertProcessor:
             try:
                 # Phase 1 — independent: collect context + retrieve similar cases
                 context_task = asyncio.create_task(self._collect_context(alert))
-                similar_cases_task = asyncio.create_task(
-                    self._retrieve_similar_cases(alert)
-                )
+                similar_cases_task = asyncio.create_task(self._retrieve_similar_cases(alert))
 
                 context = await context_task
                 root_cause = await self._analyze_root_cause(alert, context)
@@ -131,7 +130,7 @@ class AlertProcessor:
         context = AlertContext(alert=alert)
         context.metrics = {}
 
-        if self.prometheus_collector and alert.source.type == "kubernetes":
+        if self.prometheus_collector and alert.source.type in ("prometheus", "kubernetes"):
             try:
                 metrics = await self.prometheus_collector.collect(
                     alert,
@@ -248,7 +247,7 @@ class AlertProcessor:
         alert: Alert,
         context: AlertContext,
         root_cause: RootCause,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Predict future impact from metric trends."""
         if self.predictive_engine:
             try:

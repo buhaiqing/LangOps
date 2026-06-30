@@ -25,7 +25,9 @@ class LLMSettings(BaseSettings):
     model_config = _env_config("LLM_")
 
     provider: str = Field(default="openai", description="LLM provider")
-    base_url: str | None = Field(default=None, description="Custom API base URL (e.g. for Azure, proxy)")
+    base_url: str | None = Field(
+        default=None, description="Custom API base URL (e.g. for Azure, proxy)"
+    )
     model: str = Field(default="gpt-4", description="Model name")
     api_key: str = Field(..., description="API key")
     temperature: float = Field(default=0.2, ge=0, le=2)
@@ -160,10 +162,19 @@ class WebhookSettings(BaseSettings):
     model_config = _env_config("WEBHOOK_")
 
     max_payload_bytes: int = Field(default=1_048_576, ge=1024, description="Max webhook body size")
-    max_alerts_per_batch: int = Field(default=100, ge=1, le=1000, description="Max alerts per callback")
+    max_alerts_per_batch: int = Field(
+        default=100, ge=1, le=1000, description="Max alerts per callback"
+    )
     audit_log_path: str = Field(default="logs/langops-audit.log", description="Audit log file path")
-    audit_log_retention_days: int = Field(default=7, ge=1, le=90, description="Audit log retention days")
-    coalesce_max_buffered_alerts: int = Field(default=500, ge=10, le=10_000, description="Coalesce buffer cap")
+    audit_log_retention_days: int = Field(
+        default=7, ge=1, le=90, description="Audit log retention days"
+    )
+    coalesce_max_buffered_alerts: int = Field(
+        default=500, ge=10, le=10_000, description="Coalesce buffer cap"
+    )
+    concurrency: int = Field(
+        default=10, ge=1, le=100, description="Max concurrent alert processing per batch"
+    )
 
 
 class Settings(BaseSettings):
@@ -204,9 +215,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _inject_env_file_into_nested(
-        cls, values: dict[str, object]
-    ) -> dict[str, object]:
+    def _inject_env_file_into_nested(cls, values: dict[str, object]) -> dict[str, object]:
         """Ensure all nested settings read the .env file so prefix-based env vars are found.
 
         Pydantic v2 instantiates nested BaseSettings via default_factory BEFORE

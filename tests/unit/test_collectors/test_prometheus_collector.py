@@ -121,6 +121,79 @@ def test_parse_instant_result_extracts_value() -> None:
     assert parsed[0]["metric"]["pod"] == "app"
 
 
+def _prometheus_alert() -> Alert:
+    """Alert with source.type='prometheus' (as set by AlertmanagerAdapter)."""
+    return Alert(
+        id="alert-prom",
+        title="CPU high",
+        description="CPU > 90%",
+        severity=AlertSeverity.HIGH,
+        category=AlertCategory.RESOURCE,
+        source=AlertSource(
+            type="prometheus",
+            system="prom-prod",
+            namespace="production",
+            pod_name="app-pod",
+        ),
+    )
+
+
+def _aliyun_alert() -> Alert:
+    """Alert with source.type='aliyun' (as set by AliyunCmsWebhookAdapter)."""
+    return Alert(
+        id="alert-ali",
+        title="ECS CPU high",
+        description="CPU > 90%",
+        severity=AlertSeverity.HIGH,
+        category=AlertCategory.RESOURCE,
+        source=AlertSource(
+            type="aliyun",
+            system="cn-hangzhou",
+            instance_id="i-abc123",
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_do_collect_dispatches_k8s_metrics_for_kubernetes_source() -> None:
+    """source.type='kubernetes' should trigger _collect_k8s_metrics."""
+    collector = PrometheusCollector({"url": "http://prometheus:9090"})
+    collector._query_range = AsyncMock(return_value=[])
+
+    result = await collector.collect(_k8s_alert(), timedelta(minutes=10))
+
+    assert collector._query_range.await_count == 6
+    assert "cpu_usage" in result
+    assert result["cpu_usage"] == {"status": "no_data"}
+
+
+@pytest.mark.asyncio
+async def test_do_collect_dispatches_k8s_metrics_for_prometheus_source() -> None:
+    """source.type='prometheus' (from AlertManager) should also trigger
+    _collect_k8s_metrics — regression guard for prometheus source type support."""
+    collector = PrometheusCollector({"url": "http://prometheus:9090"})
+    collector._query_range = AsyncMock(return_value=[])
+
+    result = await collector.collect(_prometheus_alert(), timedelta(minutes=10))
+
+    assert collector._query_range.await_count == 6
+    assert "cpu_usage" in result
+    assert "memory_usage" in result
+    assert result["cpu_usage"] == {"status": "no_data"}
+
+
+@pytest.mark.asyncio
+async def test_do_collect_falls_through_to_generic_for_aliyun_source() -> None:
+    """source.type='aliyun' should NOT trigger _collect_k8s_metrics."""
+    collector = PrometheusCollector({"url": "http://prometheus:9090"})
+    collector._query_range = AsyncMock(return_value=[])
+
+    result = await collector.collect(_aliyun_alert(), timedelta(minutes=10))
+
+    collector._query_range.assert_not_called()
+    assert result == {"note": "Generic metric collection not yet implemented"}
+
+
 @pytest.mark.asyncio
 async def test_query_instant_calls_prometheus_api() -> None:
     collector = PrometheusCollector({"url": "http://prometheus:9090"})
