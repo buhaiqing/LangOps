@@ -77,6 +77,26 @@ class VectorStoreSettings(BaseSettings):
     persist_directory: str | None = Field(default=None)
 
 
+class RAGSettings(BaseSettings):
+    """RAG (Retrieval Augmented Generation) enhancement configuration."""
+
+    model_config = _env_config("RAG_")
+
+    hyde_enabled: bool = Field(
+        default=True, description="Enable HyDE query rewriting"
+    )
+    rerank_enabled: bool = Field(
+        default=True, description="Enable cross-encoder reranking"
+    )
+    rerank_model: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        description="Cross-encoder model for reranking",
+    )
+    rerank_fetch_k: int = Field(
+        default=10, ge=5, le=50, description="Number of documents to fetch for reranking"
+    )
+
+
 class FeishuSettings(BaseSettings):
     """Feishu notification configuration."""
 
@@ -185,6 +205,7 @@ class Settings(BaseSettings):
     prometheus: PrometheusSettings = Field(default_factory=PrometheusSettings)
     aliyun: AliyunSettings = Field(default_factory=AliyunSettings)
     vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
+    rag: RAGSettings = Field(default_factory=RAGSettings)
 
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     dingtalk: DingtalkSettings = Field(default_factory=DingtalkSettings)

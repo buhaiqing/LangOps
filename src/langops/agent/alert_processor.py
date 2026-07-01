@@ -12,7 +12,7 @@ from langops.agent.rca_engine import RCAEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import get_logger
 from langops.core.exceptions import AnalysisError
-from langops.knowledge import VectorStore
+from langops.knowledge import EnhancedRetriever, VectorStore
 from langops.models import (
     Alert,
     AlertContext,
@@ -38,6 +38,7 @@ class AlertProcessor:
         aliyun_collector: AliyunCmsCollector | None = None,
         notification_service: NotificationService | None = None,
         predictive_engine: PredictiveEngine | None = None,
+        enhanced_retriever: EnhancedRetriever | None = None,
     ) -> None:
         self.langfuse = langfuse
         self.rca_engine = rca_engine
@@ -46,7 +47,8 @@ class AlertProcessor:
         self.aliyun_collector = aliyun_collector
         self.notification_service = notification_service
         self.predictive_engine = predictive_engine
-        logger.info("AlertProcessor initialized")
+        self.enhanced_retriever = enhanced_retriever
+        logger.info("AlertProcessor initialized", enhanced_retriever=enhanced_retriever is not None)
 
     @observe(as_type="agent")
     async def process(self, alert: Alert) -> AnalysisResult:
@@ -196,11 +198,26 @@ class AlertProcessor:
         query = f"{alert.title} {alert.description}"
 
         try:
-            results = await self.vector_store.search(
-                query=query,
-                top_k=top_k,
-                filter_category=alert.category.value,
-            )
+            # Use enhanced retriever if available, otherwise fall back to vector store
+            if self.enhanced_retriever:
+                alert_context = {
+                    "service": alert.source.service,
+                    "namespace": alert.source.namespace,
+                    "resource_type": alert.source.resource_type,
+                    "severity": alert.severity.value,
+                }
+                results = await self.enhanced_retriever.search(
+                    query=query,
+                    top_k=top_k,
+                    filter_category=alert.category.value,
+                    alert_context=alert_context,
+                )
+            else:
+                results = await self.vector_store.search(
+                    query=query,
+                    top_k=top_k,
+                    filter_category=alert.category.value,
+                )
 
             similar_cases = [
                 SimilarCase(

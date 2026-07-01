@@ -13,7 +13,7 @@ from langops.agent.predictive_engine import PredictiveEngine
 from langops.collectors import AliyunCmsCollector, PrometheusCollector
 from langops.core import get_logger, settings
 from langops.core.audit import AuditLogger
-from langops.knowledge import VectorStore
+from langops.knowledge import EnhancedRetriever, QueryRewriter, Reranker, VectorStore
 from langops.services import (
     AlertNoiseReducer,
     JiraService,
@@ -46,6 +46,45 @@ def get_vector_store() -> VectorStore:
         host=settings.vector_store.host,
         port=settings.vector_store.port,
         persist_directory=settings.vector_store.persist_directory,
+    )
+
+
+@lru_cache
+def get_enhanced_retriever() -> EnhancedRetriever | None:
+    """Get enhanced retriever with HyDE and reranking if enabled."""
+    # If both features disabled, return None to use basic vector store
+    if not settings.rag.hyde_enabled and not settings.rag.rerank_enabled:
+        return None
+    
+    vector_store = get_vector_store()
+    
+    # Create query rewriter if HyDE enabled
+    query_rewriter = None
+    if settings.rag.hyde_enabled:
+        from openai import AsyncOpenAI
+        llm_client = AsyncOpenAI(
+            api_key=settings.llm.api_key,
+            base_url=settings.llm.base_url,
+        )
+        query_rewriter = QueryRewriter(
+            llm_client=llm_client,
+            model=settings.llm.model,
+            temperature=0.3,
+            max_tokens=500,
+        )
+    
+    # Create reranker if enabled
+    reranker = None
+    if settings.rag.rerank_enabled:
+        reranker = Reranker(model_name=settings.rag.rerank_model)
+    
+    return EnhancedRetriever(
+        vector_store=vector_store,
+        query_rewriter=query_rewriter,
+        reranker=reranker,
+        hyde_enabled=settings.rag.hyde_enabled,
+        rerank_enabled=settings.rag.rerank_enabled,
+        rerank_fetch_k=settings.rag.rerank_fetch_k,
     )
 
 
@@ -159,6 +198,7 @@ def get_alert_processor() -> AlertProcessor:
         aliyun_collector=get_aliyun_collector(),
         notification_service=get_notification_service(),
         predictive_engine=get_predictive_engine(),
+        enhanced_retriever=get_enhanced_retriever(),
     )
 
 
